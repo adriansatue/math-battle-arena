@@ -39,6 +39,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
   const [questions,    setQuestions]    = useState<Question[]>([])
   const [currentQ,     setCurrentQ]     = useState(0)
   const [answered,     setAnswered]     = useState(false)
+  const [pendingAnswer, setPendingAnswer] = useState<number | null>(null)
   const [lastResult,   setLastResult]   = useState<Result | null>(null)
   const [serverSentAt, setServerSentAt] = useState<string | null>(null)
   const [score,        setScore]        = useState(0)
@@ -94,6 +95,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
   const handleAnswer = useCallback(async (answer: number) => {
     if (answered || !questions[currentQ]) return
     setAnswered(true)
+    setPendingAnswer(answer)
 
     const timeTakenMs = serverSentAt
       ? Date.now() - new Date(serverSentAt).getTime()
@@ -132,6 +134,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
       if (currentQ + 1 < questions.length) {
         setCurrentQ(prev => prev + 1)
         setAnswered(false)
+        setPendingAnswer(null)
         setLastResult(null)
         setServerSentAt(new Date().toISOString())
       } else {
@@ -143,6 +146,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
   function handleTimerExpire() {
     if (!answered) {
       setAnswered(true)
+      setPendingAnswer(null)
       const result: Result = { correct: false, points: 0 }
       setLastResult(result)
       setResults(prev => [...prev, result])
@@ -151,6 +155,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
         if (currentQ + 1 < questions.length) {
           setCurrentQ(prev => prev + 1)
           setAnswered(false)
+          setPendingAnswer(null)
           setLastResult(null)
           setServerSentAt(new Date().toISOString())
         } else {
@@ -247,66 +252,61 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
 
   // ── PRACTICE SCREEN ─────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-indigo-900 p-4">
-      <div className="max-w-lg mx-auto space-y-4">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-indigo-900">
+      <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <Link href="/practice" className="text-purple-300 hover:text-white text-sm transition">
+          <Link href="/practice" className="text-purple-300 hover:text-white text-sm font-semibold transition flex items-center gap-1">
             ← Practice
           </Link>
           <div className="text-center">
-            <span className="text-purple-300 text-sm capitalize">
+            <span className="text-white/60 text-sm capitalize font-medium">
               {q.category?.replace('_', ' ')} · {battle?.difficulty as string}
             </span>
           </div>
-          <div className="text-right">
-            <p className="text-white font-bold">{score} pts</p>
+          <div className="flex items-center gap-2">
             {streak >= 3 && (
-              <p className="text-orange-400 text-xs">🔥 {streak}x streak!</p>
+              <span className="bg-orange-500/20 text-orange-300 text-xs font-bold px-2.5 py-1 rounded-full border border-orange-500/30">
+                🔥 {streak}x
+              </span>
             )}
+            <span className="bg-purple-500/20 text-white font-bold text-sm px-3 py-1 rounded-full border border-purple-500/30">
+              {score} pts
+            </span>
           </div>
         </div>
 
-        {/* Progress dots */}
-        <div className="flex gap-1 justify-center">
-          {questions.map((_, i) => (
-            <div key={i} className={`h-1.5 rounded-full transition-all ${
-              i < currentQ     ? 'w-4 bg-purple-500' :
-              i === currentQ   ? 'w-4 bg-white' :
-                                 'w-2 bg-white/20'
-            }`}/>
-          ))}
+        {/* Progress bar */}
+        <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full transition-all duration-500"
+            style={{ width: `${(currentQ / questions.length) * 100}%` }}
+          />
         </div>
 
-        {/* Timer + Question */}
-        <div className="flex items-center gap-4">
+        {/* Timer — centered above card */}
+        <div className="flex justify-center">
           <Timer
             durationSecs={battle?.time_per_q_secs as number ?? 15}
             serverSentAt={serverSentAt}
             onExpire={handleTimerExpire}
             paused={answered}
           />
-          <div className="flex-1">
-            <QuestionCard
-              sequence={currentQ + 1}
-              total={questions.length}
-              questionText={q.question_text}
-              onAnswer={handleAnswer}
-              disabled={answered}
-              lastResult={lastResult}
-            />
-          </div>
         </div>
 
-        {/* Hint when wrong */}
-        {lastResult && !lastResult.correct && lastResult.correctAnswer !== undefined && (
-          <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-3 text-center">
-            <p className="text-red-300 text-sm">
-              The correct answer was <span className="font-bold text-white">{lastResult.correctAnswer}</span>
-            </p>
-          </div>
-        )}
+        {/* Question card — full width */}
+        <QuestionCard
+          sequence={currentQ + 1}
+          total={questions.length}
+          questionText={q.question_text}
+          onAnswer={handleAnswer}
+          disabled={answered}
+          lastResult={lastResult}
+          pendingAnswer={pendingAnswer}
+          correctAnswer={lastResult && !lastResult.correct ? lastResult.correctAnswer ?? null : null}
+          showProgress={false}
+        />
 
       </div>
     </div>

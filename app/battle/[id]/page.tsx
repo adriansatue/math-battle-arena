@@ -42,6 +42,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [answered,    setAnswered]    = useState(false)
   const [pendingAnswer, setPendingAnswer] = useState<number | null>(null)
   const [lastResult,  setLastResult]  = useState<LastResult | null>(null)
+  const [correctAnswer, setCorrectAnswer] = useState<number | null>(null)
   const [status,      setStatus]      = useState<'waiting' | 'active' | 'finished'>('waiting')
   const [serverSentAt, setServerSentAt] = useState<string | null>(null)
   const [reconnecting, setReconnecting] = useState(false)
@@ -271,6 +272,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       ))
 
       setLastResult({ correct: isCorrect, points: pointsEarned })
+      setCorrectAnswer(!isCorrect && data.correct_answer != null ? data.correct_answer : null)
 
       // Broadcast to opponent
       await broadcast('answer:result', {
@@ -313,6 +315,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           setAnswered(false)
           setLastResult(null)
           setPendingAnswer(null)
+          setCorrectAnswer(null)
           setServerSentAt(freshTimestamp)
         } else {
           // Signal this player is done
@@ -327,6 +330,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     if (!answered) {
       setAnswered(true)
       setPendingAnswer(null)
+      setCorrectAnswer(null)
       setLastResult({ correct: false, points: 0 })
       setTimeout(() => {
         if (currentQ + 1 < questions.length) {
@@ -334,6 +338,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           setAnswered(false)
           setLastResult(null)
           setPendingAnswer(null)
+          setCorrectAnswer(null)
           setServerSentAt(new Date().toISOString())
         } else {
           broadcast('player:finished', { player_id: userId })
@@ -420,16 +425,18 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           <ScoreBar players={players} currentUserId={userId} />
         )}
 
-        {/* Timer + Question */}
-        <div className="flex items-center gap-4">
+        {/* Timer — centered */}
+        <div className="flex justify-center">
           <Timer
             durationSecs={battle?.time_per_q_secs as number ?? 10}
             serverSentAt={serverSentAt}
             onExpire={handleTimerExpire}
             paused={answered}
           />
-          <div className="flex-1">
-            <QuestionCard
+        </div>
+
+        {/* Question — full width */}
+        <QuestionCard
               sequence={currentQ + 1}
               total={questions.length}
               questionText={q.question_text}
@@ -437,9 +444,8 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
               disabled={answered}
               lastResult={lastResult}
               pendingAnswer={pendingAnswer}
+              correctAnswer={correctAnswer}
             />
-          </div>
-        </div>
 
       </div>
 
