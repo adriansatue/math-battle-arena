@@ -161,3 +161,123 @@ export const timeLimits: Record<Difficulty, number> = {
   medium: 10,
   hard:   6,
 }
+
+// ── TARGETED GENERATORS ───────────────────────
+
+export interface PracticeOptions {
+  timesTable?: number   // specific times table e.g. 7
+  divisor?:   number   // specific divisor e.g. 6
+  maxNumber?: number   // max number for add/subtract e.g. 100
+}
+
+export function generateTargetedQuestions(
+  category:   Category,
+  difficulty: Difficulty,
+  count:      number,
+  options:    PracticeOptions = {}
+): Question[] {
+  const questions: Question[] = []
+  const seen = new Set<string>()
+  let attempts = 0
+
+  while (questions.length < count && attempts < count * 30) {
+    attempts++
+    let q: Question | null = null
+
+    if (category === 'multiplication') {
+      const table = options.timesTable ?? rand(2, 12)
+      const other = difficulty === 'hard' ? rand(2, 12) : rand(1, 12)
+      q = {
+        question_text:  `${table} × ${other}`,
+        correct_answer: table * other,
+        category:       'multiplication',
+        difficulty,
+      }
+    }
+
+    else if (category === 'division') {
+      const divisor  = options.divisor ?? rand(2, 12)
+      const result   = rand(1, 12)
+      const dividend = divisor * result
+      q = {
+        question_text:  `${dividend} ÷ ${divisor}`,
+        correct_answer: result,
+        category:       'division',
+        difficulty,
+      }
+    }
+
+    else if (category === 'addition') {
+      const max = options.maxNumber ?? 100
+      const a   = rand(1, max - 1)
+      const b   = rand(1, max - a)
+      q = {
+        question_text:  `${a} + ${b}`,
+        correct_answer: a + b,
+        category:       'addition',
+        difficulty,
+      }
+    }
+
+    else if (category === 'subtraction') {
+      const max = options.maxNumber ?? 100
+      const a   = rand(2, max)
+      const b   = rand(1, a)
+      q = {
+        question_text:  `${a} - ${b}`,
+        correct_answer: a - b,
+        category:       'subtraction',
+        difficulty,
+      }
+    }
+
+    else if (category === 'fractions') {
+      q = makeFraction()
+    }
+
+    else if (category === 'order_of_ops') {
+      q = makeOrderOfOps()
+    }
+
+    if (q && !seen.has(q.question_text)) {
+      seen.add(q.question_text)
+      questions.push({ ...q, difficulty })
+    }
+  }
+
+  return questions
+}
+// Generate questions for a specific category
+export function generateQuestionsForCategory(
+  category: Category,
+  difficulty: Difficulty,
+  count: number
+): Question[] {
+  const generatorMap: Record<Category, (() => Question)[]> = {
+    addition:       [makeAddition],
+    subtraction:    [makeSubtraction],
+    multiplication: difficulty === 'hard'
+      ? [makeNegativeMultiplication]
+      : [makeMultiplication],
+    division:       [makeDivision],
+    fractions:      [makeFraction],
+    order_of_ops:   [makeOrderOfOps],
+  }
+
+  const generators = generatorMap[category] ?? [makeAddition]
+  const questions: Question[] = []
+  const seen = new Set<string>()
+  let attempts = 0
+
+  while (questions.length < count && attempts < count * 20) {
+    attempts++
+    const gen = generators[rand(0, generators.length - 1)]
+    const q   = gen()
+    if (!seen.has(q.question_text)) {
+      seen.add(q.question_text)
+      questions.push({ ...q, difficulty })
+    }
+  }
+
+  return questions
+}

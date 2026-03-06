@@ -40,6 +40,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [currentQ,    setCurrentQ]    = useState(0)
   const [players,     setPlayers]     = useState<Player[]>([])
   const [answered,    setAnswered]    = useState(false)
+  const [pendingAnswer, setPendingAnswer] = useState<number | null>(null)
   const [lastResult,  setLastResult]  = useState<LastResult | null>(null)
   const [status,      setStatus]      = useState<'waiting' | 'active' | 'finished'>('waiting')
   const [serverSentAt, setServerSentAt] = useState<string | null>(null)
@@ -238,6 +239,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   async function handleAnswer(answer: number) {
     if (answered || !questions[currentQ]) return
     setAnswered(true)
+    setPendingAnswer(answer)   // ← show immediately, before server responds
 
     const sentAt = Date.now()
 
@@ -310,6 +312,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           setCurrentQ(prev => prev + 1)
           setAnswered(false)
           setLastResult(null)
+          setPendingAnswer(null)
           setServerSentAt(freshTimestamp)
         } else {
           // Signal this player is done
@@ -323,12 +326,14 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   function handleTimerExpire() {
     if (!answered) {
       setAnswered(true)
+      setPendingAnswer(null)
       setLastResult({ correct: false, points: 0 })
       setTimeout(() => {
         if (currentQ + 1 < questions.length) {
           setCurrentQ(prev => prev + 1)
           setAnswered(false)
           setLastResult(null)
+          setPendingAnswer(null)
           setServerSentAt(new Date().toISOString())
         } else {
           broadcast('player:finished', { player_id: userId })
@@ -431,6 +436,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
               onAnswer={handleAnswer}
               disabled={answered}
               lastResult={lastResult}
+              pendingAnswer={pendingAnswer}
             />
           </div>
         </div>

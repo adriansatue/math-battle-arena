@@ -3,16 +3,17 @@
 import { useEffect, useRef } from 'react'
 
 interface QuestionCardProps {
-  sequence:     number
-  total:        number
-  questionText: string
-  onAnswer:     (answer: number) => void
-  disabled:     boolean
-  lastResult?:  { correct: boolean; points: number } | null
+  sequence:      number
+  total:         number
+  questionText:  string
+  onAnswer:      (answer: number) => void
+  disabled:      boolean
+  lastResult?:   { correct: boolean; points: number } | null
+  pendingAnswer?: number | null   // submitted but awaiting server response
 }
 
 export function QuestionCard({
-  sequence, total, questionText, onAnswer, disabled, lastResult
+  sequence, total, questionText, onAnswer, disabled, lastResult, pendingAnswer
 }: QuestionCardProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -57,14 +58,19 @@ export function QuestionCard({
         </p>
       </div>
 
-      {/* Last result feedback */}
-      {lastResult && (
-        <div className={`text-center mb-4 text-sm font-semibold ${
-          lastResult.correct ? 'text-green-400' : 'text-red-400'
+      {/* Answer feedback: pending → then real result */}
+      {(pendingAnswer != null || lastResult) && (
+        <div className={`text-center mb-4 text-sm font-semibold transition-all ${
+          lastResult
+            ? lastResult.correct ? 'text-green-400' : 'text-red-400'
+            : 'text-yellow-300'
         }`}>
-          {lastResult.correct
-            ? `✅ Correct! +${lastResult.points} pts`
-            : '❌ Wrong!'}
+          {lastResult
+            ? lastResult.correct
+              ? `✅ Correct! +${lastResult.points} pts`
+              : '❌ Wrong!'
+            : `⏳ ${pendingAnswer}…`
+          }
         </div>
       )}
 

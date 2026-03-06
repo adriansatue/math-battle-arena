@@ -27,15 +27,16 @@ export default function NavBar() {
     load()
   }, [supabase])
 
-  // Hide nav on auth pages and battle screen
-  const hidden = ['/login', '/signup', '/battle'].some(p => pathname.startsWith(p))
+  // Hide nav on auth pages, battle screen and practice session
+  const hidden = ['/login', '/signup', '/battle', '/practice/'].some(p => pathname.startsWith(p))
   if (hidden) return null
 
   const links = [
-    { href: '/lobby',       label: 'Play',        emoji: '⚔️' },
-    { href: '/leaderboard', label: 'Ranks',        emoji: '🏆' },
-    { href: '/rewards',     label: 'Cards',        emoji: '🃏' },
-    { href: '/profile',     label: 'Profile',      emoji: '👤' },
+    { href: '/lobby',       label: 'Play',     emoji: '⚔️' },
+    { href: '/practice',    label: 'Practice', emoji: '🎯' },
+    { href: '/leaderboard', label: 'Ranks',    emoji: '🏆' },
+    { href: '/rewards',     label: 'Cards',    emoji: '🃏' },
+    { href: '/profile',     label: 'Profile',  emoji: '👤' },
   ]
 
   if (isAdmin) {
