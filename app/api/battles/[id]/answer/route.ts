@@ -1,0 +1,158 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { calculatePoints, isFlagged } from '@/lib/game/scoring'
+import type { Difficulty } from '@/lib/game/questions'
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const body = await request.json()
+  const { question_id, answer_given, time_taken_ms } = body
+
+  // Fetch question with correct_answer (server only)
+  const { data: question, error: qError } = await supabase
+    .from('battle_questions')
+    .select('*')
+    .eq('id', question_id)
+    .eq('battle_id', id)
+    .single()
+
+  if (qError || !question) {
+    return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+  }
+
+  // Fetch battle for time limit + difficulty
+  const { data: battle } = await supabase
+    .from('battles')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (!battle) {
+    return NextResponse.json({ error: 'Battle not found' }, { status: 404 })
+  }
+
+  const timeLimitMs = battle.time_per_q_secs * 1000
+
+  // Use per-question server_sent_at if it was updated when the question started;
+  // otherwise fall back to client-supplied time_taken_ms.
+  // We NEVER return 400 for slow answers — just award 0 pts so the game keeps moving.
+  const serverSentAt = question.server_sent_at
+    ? new Date(question.server_sent_at).getTime()
+    : null
+
+  // A timestamp is "fresh" only if it was set recently (within 1 question period + 30s buffer)
+  const isFreshTimestamp = serverSentAt
+    ? (Date.now() - serverSentAt) <= timeLimitMs + 30_000
+    : false
+
+  const serverValidatedMs = isFreshTimestamp
+    ? Date.now() - serverSentAt!
+    : time_taken_ms
+
+  // Mark the answer as over-time but still process it (gives 0 pts via calculatePoints)
+  const isOverTime = serverValidatedMs > timeLimitMs
+
+  // Check if already answered by this player
+  const { data: existing } = await supabase
+    .from('battle_answers')
+    .select('id')
+    .eq('question_id', question_id)
+    .eq('player_id', user.id)
+    .single()
+
+  if (existing) {
+    return NextResponse.json({ error: 'Already answered' }, { status: 400 })
+  }
+
+  // Check correctness (allow small float tolerance for fractions)
+  const isCorrect = Math.abs(Number(answer_given) - Number(question.correct_answer)) < 0.01
+
+  // Atomic claimed_by update for first-answer bonus (realtime mode)
+  let isFirstAnswer = false
+  if (isCorrect && battle.mode === 'realtime') {
+    const { data: claimed } = await supabase
+      .from('battle_questions')
+      .update({ claimed_by: user.id, claimed_at: new Date().toISOString() })
+      .eq('id', question_id)
+      .is('claimed_by', null)
+      .select('claimed_by')
+      .single()
+
+    isFirstAnswer = claimed?.claimed_by === user.id
+  }
+
+  // Get current streak for this player in this battle
+  const { data: prevAnswers } = await supabase
+    .from('battle_answers')
+    .select('is_correct')
+    .eq('battle_id', id)
+    .eq('player_id', user.id)
+    .order('answered_at', { ascending: false })
+    .limit(10)
+
+  let currentStreak = 0
+  for (const a of (prevAnswers || [])) {
+    if (a.is_correct) currentStreak++
+    else break
+  }
+
+  // Update this question's server_sent_at so the NEXT question's timing starts fresh
+  // (All questions share the battle-start timestamp by default — this fixes cumulative drift)
+  await supabase
+    .from('battle_questions')
+    .update({ server_sent_at: new Date().toISOString() })
+    .eq('battle_id', id)
+    .gt('sequence', question.sequence)
+    .is('claimed_by', null)  // only unstarted questions
+
+  // Calculate points (returns 0 if isOverTime)
+  const pointsEarned = isOverTime ? 0 : calculatePoints({
+    difficulty:    battle.difficulty as Difficulty,
+    isCorrect,
+    timeTakenMs:   serverValidatedMs,
+    timeLimitSecs: battle.time_per_q_secs,
+    isFirstAnswer,
+    currentStreak,
+  })
+
+  // Flag suspicious timing
+  const flagged = isFlagged(time_taken_ms, serverValidatedMs, battle.time_per_q_secs)
+
+  // Save the answer
+  const { error: insertError } = await supabase
+    .from('battle_answers')
+    .insert({
+      battle_id:           id,
+      question_id,
+      player_id:           user.id,
+      answer_given:        Number(answer_given),
+      is_correct:          isCorrect,
+      time_taken_ms,
+      server_validated_ms: serverValidatedMs,
+      points_earned:       pointsEarned,
+      flagged,
+    })
+
+  if (insertError) {
+    return NextResponse.json({ error: insertError.message }, { status: 500 })
+  }
+
+  return NextResponse.json({
+    is_correct:     isCorrect,
+    points_earned:  pointsEarned,
+    correct_answer: isCorrect ? null : question.correct_answer,
+    is_first_answer: isFirstAnswer,
+    current_streak: isCorrect ? currentStreak + 1 : 0,
+    flagged,
+  })
+}
