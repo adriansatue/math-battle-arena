@@ -36,6 +36,14 @@ export async function POST(
     return NextResponse.json({ error: 'Battle already started' }, { status: 400 })
   }
 
+  // If host staked a card, guest must also stake before the battle can start
+  if (battle.host_staked_inventory_id && !battle.guest_staked_inventory_id) {
+    return NextResponse.json(
+      { error: 'bet_not_matched', message: 'Waiting for opponent to match the card bet' },
+      { status: 400 }
+    )
+  }
+
   // Generate questions
   const questions = generateQuestions(
     battle.difficulty as Difficulty,

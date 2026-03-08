@@ -165,9 +165,9 @@ export const timeLimits: Record<Difficulty, number> = {
 // ── TARGETED GENERATORS ───────────────────────
 
 export interface PracticeOptions {
-  timesTable?: number   // specific times table e.g. 7
-  divisor?:   number   // specific divisor e.g. 6
-  maxNumber?: number   // max number for add/subtract e.g. 100
+  timesTable?: number | number[]   // one or more times tables e.g. [3, 7, 9]
+  divisor?:   number | number[]   // one or more divisors e.g. [4, 6]
+  maxNumber?: number              // max number for add/subtract e.g. 100
 }
 
 export function generateTargetedQuestions(
@@ -185,7 +185,9 @@ export function generateTargetedQuestions(
     let q: Question | null = null
 
     if (category === 'multiplication') {
-      const table = options.timesTable ?? rand(2, 12)
+      const tableOpt = options.timesTable
+      const tablePool = Array.isArray(tableOpt) ? tableOpt : tableOpt ? [tableOpt] : null
+      const table = tablePool ? tablePool[rand(0, tablePool.length - 1)] : rand(2, 12)
       const other = difficulty === 'hard' ? rand(2, 12) : rand(1, 12)
       q = {
         question_text:  `${table} × ${other}`,
@@ -196,7 +198,9 @@ export function generateTargetedQuestions(
     }
 
     else if (category === 'division') {
-      const divisor  = options.divisor ?? rand(2, 12)
+      const divisorOpt  = options.divisor
+      const divisorPool = Array.isArray(divisorOpt) ? divisorOpt : divisorOpt ? [divisorOpt] : null
+      const divisor  = divisorPool ? divisorPool[rand(0, divisorPool.length - 1)] : rand(2, 12)
       const result   = rand(1, 12)
       const dividend = divisor * result
       q = {

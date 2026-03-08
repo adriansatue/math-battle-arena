@@ -86,13 +86,18 @@ export function CardStakeSelector({
 
   return (
     <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-      <h3 className="text-white font-bold text-sm mb-3">🃏 Card Bet <span className="text-white/40 font-normal">(optional)</span></h3>
+      <h3 className="text-white font-bold text-sm mb-3">
+        🃏 Card Bet{' '}
+        <span className="text-white/40 font-normal">
+          {opponentStakedCard ? '(required to proceed)' : '(optional)'}
+        </span>
+      </h3>
 
       {/* Opponent's staked card */}
       {opponentStakedCard && (
         <div className="mb-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3">
           <p className="text-yellow-300 text-xs font-semibold mb-2">
-            ⚔️ Opponent staked a card! Stake yours to match the bet.
+            ⚔️ Opponent staked a card — you must match the bet to start!
           </p>
           <div className="flex items-center gap-3">
             <RewardCard
@@ -122,6 +127,9 @@ export function CardStakeSelector({
             <p className="text-white font-bold">{selected.reward_catalog.name}</p>
             <p className="text-green-400 text-xs">✅ Staked for this battle</p>
             <p className="text-white/40 text-xs mt-1">Winner takes this card!</p>
+            {!opponentStakedCard && (
+              <p className="text-yellow-300 text-xs mt-1 animate-pulse">⏳ Waiting for opponent to match the bet...</p>
+            )}
             <button
               onClick={unstakeCard}
               disabled={loading}
@@ -140,9 +148,13 @@ export function CardStakeSelector({
           ) : (
             <button
               onClick={() => setShow(true)}
-              className="w-full bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 border border-yellow-500/30 text-yellow-300 font-bold py-3 rounded-xl transition text-sm"
+              className={`w-full font-bold py-3 rounded-xl transition text-sm border ${
+                opponentStakedCard
+                  ? 'bg-gradient-to-r from-yellow-500/40 to-orange-500/40 hover:from-yellow-500/60 hover:to-orange-500/60 border-yellow-500/60 text-yellow-200 animate-pulse'
+                  : 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 border-yellow-500/30 text-yellow-300'
+              }`}
             >
-              🃏 Stake a Card to Win
+              {opponentStakedCard ? '⚔️ Match the Bet to Proceed' : '🃏 Stake a Card to Win'}
             </button>
           )}
         </>

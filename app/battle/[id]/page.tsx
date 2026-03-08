@@ -69,6 +69,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       const points = payload.points_earned as number
       const streak = payload.current_streak as number
 
+      // Supabase broadcast echoes back to the sender — skip own events
+      // (own score is already updated directly in handleAnswer)
+      if (pid === userIdRef.current) return
+
       setPlayers(prev => prev.map(p =>
         p.userId === pid
           ? { ...p, score: p.score + points, streak }

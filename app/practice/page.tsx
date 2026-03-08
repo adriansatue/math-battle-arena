@@ -34,11 +34,23 @@ export default function PracticePage() {
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
 
-  // Sub-options
-  const [timesTable, setTimesTable] = useState<number | 'all'>('all')
-  const [divisor,    setDivisor]    = useState<number | 'all'>('all')
-  const [addMax,     setAddMax]     = useState<number>(100)
-  const [subMax,     setSubMax]     = useState<number>(100)
+  // Sub-options — empty array means "all"
+  const [timesTables, setTimesTables] = useState<number[]>([])
+  const [divisors,    setDivisors]    = useState<number[]>([])
+  const [addMax,      setAddMax]      = useState<number>(100)
+  const [subMax,      setSubMax]      = useState<number>(100)
+
+  function toggleTable(n: number) {
+    setTimesTables(prev =>
+      prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n]
+    )
+  }
+
+  function toggleDivisor(n: number) {
+    setDivisors(prev =>
+      prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n]
+    )
+  }
 
   const selectedCat = CATEGORIES.find(c => c.id === category)
 
@@ -49,8 +61,8 @@ export default function PracticePage() {
 
     // Build options based on category
     const options: Record<string, unknown> = {}
-    if (category === 'multiplication' && timesTable !== 'all') options.timesTable = timesTable
-    if (category === 'division'       && divisor    !== 'all') options.divisor    = divisor
+    if (category === 'multiplication' && timesTables.length > 0) options.timesTable = timesTables
+    if (category === 'division'       && divisors.length    > 0) options.divisor    = divisors
     if (category === 'addition')       options.maxNumber = addMax
     if (category === 'subtraction')    options.maxNumber = subMax
 
@@ -86,8 +98,8 @@ export default function PracticePage() {
                 onClick={() => {
                   setCategory(cat.id as Category)
                   // Reset sub-options on category change
-                  setTimesTable('all')
-                  setDivisor('all')
+                  setTimesTables([])
+                  setDivisors([])
                   setAddMax(100)
                   setSubMax(100)
                 }}
@@ -113,13 +125,13 @@ export default function PracticePage() {
             {category === 'multiplication' && (
               <>
                 <h2 className="text-white font-bold text-xs uppercase tracking-widest mb-3 opacity-50">
-                  Step 2 · Which times table?
+                  Step 2 · Which times tables? <span className="normal-case">(pick one or more)</span>
                 </h2>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => setTimesTable('all')}
+                    onClick={() => setTimesTables([])}
                     className={`px-3 py-1.5 rounded-xl text-sm font-bold transition-all ${
-                      timesTable === 'all'
+                      timesTables.length === 0
                         ? 'bg-purple-600 text-white'
                         : 'bg-white/10 text-white/60 hover:bg-white/20'
                     }`}
@@ -129,10 +141,10 @@ export default function PracticePage() {
                   {TIMES_TABLES.map(n => (
                     <button
                       key={n}
-                      onClick={() => setTimesTable(n)}
+                      onClick={() => toggleTable(n)}
                       className={`w-10 h-10 rounded-xl text-sm font-bold transition-all ${
-                        timesTable === n
-                          ? 'bg-purple-600 text-white scale-110'
+                        timesTables.includes(n)
+                          ? 'bg-purple-600 text-white scale-110 ring-2 ring-purple-400'
                           : 'bg-white/10 text-white/60 hover:bg-white/20'
                       }`}
                     >
@@ -140,9 +152,9 @@ export default function PracticePage() {
                     </button>
                   ))}
                 </div>
-                {timesTable !== 'all' && (
+                {timesTables.length > 0 && (
                   <p className="text-purple-300 text-xs mt-3">
-                    Practice: {timesTable} × 1 to {timesTable} × 12
+                    Selected: {timesTables.sort((a,b) => a-b).map(n => `${n}×`).join('  ')}
                   </p>
                 )}
               </>
@@ -152,13 +164,13 @@ export default function PracticePage() {
             {category === 'division' && (
               <>
                 <h2 className="text-white font-bold text-xs uppercase tracking-widest mb-3 opacity-50">
-                  Step 2 · Which divisor?
+                  Step 2 · Which divisors? <span className="normal-case">(pick one or more)</span>
                 </h2>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => setDivisor('all')}
+                    onClick={() => setDivisors([])}
                     className={`px-3 py-1.5 rounded-xl text-sm font-bold transition-all ${
-                      divisor === 'all'
+                      divisors.length === 0
                         ? 'bg-purple-600 text-white'
                         : 'bg-white/10 text-white/60 hover:bg-white/20'
                     }`}
@@ -168,10 +180,10 @@ export default function PracticePage() {
                   {TIMES_TABLES.map(n => (
                     <button
                       key={n}
-                      onClick={() => setDivisor(n)}
+                      onClick={() => toggleDivisor(n)}
                       className={`w-10 h-10 rounded-xl text-sm font-bold transition-all ${
-                        divisor === n
-                          ? 'bg-purple-600 text-white scale-110'
+                        divisors.includes(n)
+                          ? 'bg-purple-600 text-white scale-110 ring-2 ring-purple-400'
                           : 'bg-white/10 text-white/60 hover:bg-white/20'
                       }`}
                     >
@@ -179,9 +191,9 @@ export default function PracticePage() {
                     </button>
                   ))}
                 </div>
-                {divisor !== 'all' && (
+                {divisors.length > 0 && (
                   <p className="text-purple-300 text-xs mt-3">
-                    Practice: ? ÷ {divisor} = 1 to 12
+                    Selected: {divisors.sort((a,b) => a-b).map(n => `÷${n}`).join('  ')}
                   </p>
                 )}
               </>

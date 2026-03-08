@@ -1,22 +1,22 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 type Mode       = 'realtime' | 'turnbased'
 type Difficulty = 'easy' | 'medium' | 'hard'
-type Tab        = 'create' | 'join' | 'random'
 
 export default function LobbyPage() {
   const router = useRouter()
 
-  // Tab
-  const [tab, setTab] = useState<Tab>('create')
+  // Friend panel: null = hidden, 'create' = create battle, 'join' = join by code
+  const [friendPanel, setFriendPanel] = useState<null | 'create' | 'join'>(null)
 
   // Create battle
-  const [mode,        setMode]        = useState<Mode>('realtime')
+  const mode                          = 'realtime' as Mode
   const [difficulty,  setDifficulty]  = useState<Difficulty>('medium')
-  const [questions,   setQuestions]   = useState(10)
+  const questions                     = 10
   const [creating,    setCreating]    = useState(false)
   const [inviteCode,  setInviteCode]  = useState<string | null>(null)
   const [battleId,    setBattleId]    = useState<string | null>(null)
@@ -26,11 +26,11 @@ export default function LobbyPage() {
   const [joining,     setJoining]     = useState(false)
 
   // Random matchmaking
-  const [queueMode,   setQueueMode]   = useState<Mode>('realtime')
+  const queueMode                     = 'realtime' as Mode
   const [queueDiff,   setQueueDiff]   = useState<Difficulty>('medium')
   const [inQueue,     setInQueue]     = useState(false)
   const [queueTime,   setQueueTime]   = useState(0)
-  const queueTimeRef = useRef(0)  // ← add this
+  const queueTimeRef = useRef(0)
   const queueInterval                 = useRef<NodeJS.Timeout | null>(null)
   const pollInterval                  = useRef<NodeJS.Timeout | null>(null)
 
@@ -44,7 +44,7 @@ export default function LobbyPage() {
     }
   }, [])
 
-  // ── CREATE BATTLE ────────────────────────────
+  // ── CREATE BATTLE ─────────────────────────────────
   async function createBattle() {
     setCreating(true)
     setError(null)
@@ -67,7 +67,7 @@ export default function LobbyPage() {
     if (battleId) router.push(`/battle/${battleId}`)
   }
 
-  // ── JOIN BY CODE ─────────────────────────────
+  // ── JOIN BY CODE ───────────────────────────────────
   async function joinByCode() {
     if (!joinCode.trim()) return
     setJoining(true)
@@ -85,7 +85,7 @@ export default function LobbyPage() {
     router.push(`/battle/${data.battle_id}`)
   }
 
-  // ── RANDOM MATCHMAKING ───────────────────────
+  // ── RANDOM MATCHMAKING ────────────────────────────
   async function joinQueue() {
     setInQueue(true)
     setQueueTime(0)
@@ -93,7 +93,7 @@ export default function LobbyPage() {
 
     queueInterval.current = setInterval(() => {
       setQueueTime(prev => {
-        queueTimeRef.current = prev + 1  // ← keep ref updated
+        queueTimeRef.current = prev + 1
         return prev + 1
       })
     }, 1000)
@@ -116,7 +116,6 @@ export default function LobbyPage() {
 
     // Poll for match every 2s
     pollInterval.current = setInterval(async () => {
-      // Use ref instead of queueTime (avoids stale closure)
       if (queueTimeRef.current >= 15) {
         clearInterval(pollInterval.current!)
         clearInterval(queueInterval.current!)
@@ -172,212 +171,235 @@ export default function LobbyPage() {
   const formatTime = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-  // ── RENDER ───────────────────────────────────
+  // ── INSTANT BOT BATTLE ────────────────────────────
+  const [botDiff,      setBotDiff]      = useState<Difficulty>('medium')
+  const [startingBot,  setStartingBot]  = useState(false)
+
+  async function startBotBattle() {
+    setStartingBot(true)
+    setError(null)
+    try {
+      const res  = await fetch('/api/matchmaking/bot', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ mode: 'realtime', difficulty: botDiff, bot_difficulty: botDiff }),
+      })
+      const data = await res.json()
+      if (data.battle_id) {
+        router.push(`/battle/${data.battle_id}`)
+      } else {
+        setError(data.error ?? 'Failed to start bot battle')
+        setStartingBot(false)
+      }
+    } catch {
+      setError('Failed to start bot battle')
+      setStartingBot(false)
+    }
+  }
+
+  // ── RENDER ────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center p-4">
-      <div className="max-w-2xl w-full space-y-6">
-        <div className="text-center space-y-3">
-          <h1 className="text-6xl font-black text-white drop-shadow-2xl">
-            ⚔️ Math Battle Arena
-          </h1>
-          <p className="text-purple-200 text-lg">Choose your battle mode</p>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 p-4 pb-8">
+      <div className="max-w-md mx-auto space-y-5 pt-8">
+
+        {/* Header */}
+        <div className="text-center space-y-1">
+          <h1 className="text-4xl font-black text-white">⚔️ Math Battle</h1>
+          <p className="text-purple-300 text-sm">Choose how you want to play</p>
         </div>
 
         {error && (
-          <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4 text-red-300 text-sm text-center">
+          <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-3 text-red-300 text-sm text-center">
             {error}
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-2 flex gap-2">
-          {(['create', 'join', 'random'] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`flex-1 py-3 rounded-xl font-bold transition-all ${
-                tab === t
-                  ? 'bg-white text-purple-900 shadow-lg'
-                  : 'text-white/60 hover:text-white hover:bg-white/10'
-              }`}>
-              {t === 'create' ? '🎯 Create' : t === 'join' ? '🔗 Join' : '🎲 Random'}
+        {/* ── QUICK BATTLE (primary CTA) ── */}
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/10 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⚡</span>
+            <h2 className="text-white font-bold text-lg">Quick Battle</h2>
+            <span className="text-white/40 text-xs ml-auto">vs real players</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {(['easy', 'medium', 'hard'] as Difficulty[]).map(d => (
+              <button key={d} onClick={() => setQueueDiff(d)}
+                className={`py-2 rounded-xl font-semibold text-sm transition-all ${
+                  queueDiff === d
+                    ? 'bg-purple-600 text-white shadow-lg'
+                    : 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white'
+                }`}>
+                {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Medium' : '🚀 Hard'}
+              </button>
+            ))}
+          </div>
+
+          {inQueue ? (
+            <div className="text-center space-y-3 py-2">
+              <div className="flex items-center justify-center gap-3">
+                <div className="flex gap-1">
+                  {[0,1,2].map(i => (
+                    <div key={i} className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }}/>
+                  ))}
+                </div>
+                <p className="text-white font-bold">
+                  {queueTime >= 12 ? '🤖 Starting vs AI...' : 'Finding opponent...'}
+                </p>
+                <span className="text-purple-300 font-mono text-sm">{formatTime(queueTime)}</span>
+              </div>
+              <button onClick={leaveQueue}
+                className="text-red-400 hover:text-red-300 text-sm font-semibold transition">
+                ✕ Cancel
+              </button>
+            </div>
+          ) : (
+            <button onClick={joinQueue}
+              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold py-4 rounded-xl transition-all text-lg shadow-lg hover:-translate-y-0.5">
+              Find Opponent 🎲
             </button>
-          ))}
+          )}
         </div>
 
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 space-y-6 shadow-2xl">
-          {/* ── CREATE TAB ── */}
-          {tab === 'create' && (
-            <>
-              <div>
-                <label className="text-purple-200 text-sm font-semibold block mb-2">Mode</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {(['realtime', 'turnbased'] as Mode[]).map(m => (
-                    <button key={m} onClick={() => setMode(m)}
-                      className={`py-3 rounded-xl font-semibold text-sm transition-all ${
-                        mode === m
-                          ? 'bg-purple-600 text-white shadow-lg'
-                          : 'bg-white/10 text-white/60 hover:bg-white/20'
-                      }`}>
-                      {m === 'realtime' ? '⚡ Real-time' : '🔄 Turn-based'}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {/* ── MODE CARDS ── */}
+        <div className="grid grid-cols-2 gap-3">
 
-              <div>
-                <label className="text-purple-200 text-sm font-semibold block mb-2">Difficulty</label>
-                <div className="grid grid-cols-3 gap-3">
+          {/* Play a Friend – full width */}
+          <div className="col-span-2 bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">👥</span>
+              <h2 className="text-white font-bold">Play a Friend</h2>
+            </div>
+
+            {friendPanel === null && (
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => { setFriendPanel('create'); setInviteCode(null); setBattleId(null) }}
+                  className="bg-white/10 hover:bg-white/20 text-white font-semibold py-3 rounded-xl text-sm transition">
+                  🎯 Create Game
+                </button>
+                <button onClick={() => setFriendPanel('join')}
+                  className="bg-white/10 hover:bg-white/20 text-white font-semibold py-3 rounded-xl text-sm transition">
+                  🔗 Join by Code
+                </button>
+              </div>
+            )}
+
+            {friendPanel === 'create' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
                   {(['easy', 'medium', 'hard'] as Difficulty[]).map(d => (
                     <button key={d} onClick={() => setDifficulty(d)}
-                      className={`py-3 rounded-xl font-semibold text-sm transition-all ${
-                        difficulty === d
-                          ? 'bg-purple-600 text-white shadow-lg'
-                          : 'bg-white/10 text-white/60 hover:bg-white/20'
+                      className={`py-2 rounded-xl font-semibold text-xs transition-all ${
+                        difficulty === d ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white'
                       }`}>
-                      {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Medium' : '🚀 Hard'}
+                      {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Med' : '🚀 Hard'}
                     </button>
                   ))}
                 </div>
+                {inviteCode ? (
+                  <div className="bg-green-500/20 border border-green-500/30 rounded-xl p-3 text-center space-y-2">
+                    <p className="text-green-300 text-xs">Share this code:</p>
+                    <p className="text-white text-3xl font-bold tracking-widest">{inviteCode}</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => navigator.clipboard.writeText(inviteCode)}
+                        className="flex-1 text-green-300 hover:text-white text-xs transition bg-white/10 rounded-lg py-2">
+                        📋 Copy
+                      </button>
+                      <button onClick={goToBattle}
+                        className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-2 rounded-lg text-xs transition">
+                        Enter Room ⚔️
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button onClick={() => setFriendPanel(null)}
+                      className="bg-white/10 hover:bg-white/20 text-white/60 font-semibold py-3 rounded-xl text-sm transition px-4">
+                      ←
+                    </button>
+                    <button onClick={createBattle} disabled={creating}
+                      className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition">
+                      {creating ? 'Creating...' : 'Create Battle ⚔️'}
+                    </button>
+                  </div>
+                )}
               </div>
+            )}
 
-              <div>
-                <label className="text-purple-200 text-sm font-semibold block mb-2">
-                  Questions: <span className="text-white">{questions}</span>
-                </label>
-                <input type="range" min={5} max={20} step={5}
-                  value={questions} onChange={e => setQuestions(Number(e.target.value))}
-                  className="w-full accent-purple-500"/>
-                <div className="flex justify-between text-white/30 text-xs mt-1">
-                  <span>5</span><span>10</span><span>15</span><span>20</span>
-                </div>
-              </div>
-
-              {inviteCode ? (
-                <div className="bg-green-500/20 border border-green-500/30 rounded-xl p-4 text-center space-y-3">
-                  <p className="text-green-300 text-sm">Battle created! Share this code:</p>
-                  <p className="text-white text-4xl font-bold tracking-widest">{inviteCode}</p>
-                  <button onClick={() => navigator.clipboard.writeText(inviteCode)}
-                    className="text-green-300 text-xs hover:text-white transition">
-                    📋 Copy code
-                  </button>
-                  <button onClick={goToBattle}
-                    className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3 rounded-xl transition hover:-translate-y-0.5">
-                    Enter Battle Room ⚔️
-                  </button>
-                </div>
-              ) : (
-                <button onClick={createBattle} disabled={creating}
-                  className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all duration-200 shadow-lg hover:-translate-y-0.5 text-lg">
-                  {creating ? 'Creating...' : 'Create Battle ⚔️'}
-                </button>
-              )}
-            </>
-          )}
-
-          {/* ── JOIN TAB ── */}
-          {tab === 'join' && (
-            <>
-              <div>
-                <label className="text-purple-200 text-sm font-semibold block mb-2">
-                  Enter Invite Code
-                </label>
+            {friendPanel === 'join' && (
+              <div className="space-y-3">
                 <input
                   type="text"
                   value={joinCode}
                   onChange={e => setJoinCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. X4K9PZ"
+                  placeholder="Enter code e.g. X4K9PZ"
                   maxLength={6}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-4 text-white text-2xl font-bold text-center tracking-widest placeholder-white/20 focus:outline-none focus:border-purple-400 transition uppercase"
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-xl font-bold text-center tracking-widest placeholder-white/20 focus:outline-none focus:border-purple-400 transition uppercase"
                 />
-              </div>
-              <button
-                onClick={joinByCode}
-                disabled={joining || joinCode.length < 6}
-                className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all text-lg"
-              >
-                {joining ? 'Joining...' : 'Join Battle 🔗'}
-              </button>
-              <p className="text-white/30 text-xs text-center">
-                Ask your friend for their 6-character invite code
-              </p>
-            </>
-          )}
-
-          {/* ── RANDOM TAB ── */}
-          {tab === 'random' && (
-            <>
-              {!inQueue ? (
-                <>
-                  <div>
-                    <label className="text-purple-200 text-sm font-semibold block mb-2">Mode</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {(['realtime', 'turnbased'] as Mode[]).map(m => (
-                        <button key={m} onClick={() => setQueueMode(m)}
-                          className={`py-3 rounded-xl font-semibold text-sm transition-all ${
-                            queueMode === m
-                              ? 'bg-purple-600 text-white'
-                              : 'bg-white/10 text-white/60 hover:bg-white/20'
-                          }`}>
-                          {m === 'realtime' ? '⚡ Real-time' : '🔄 Turn-based'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-purple-200 text-sm font-semibold block mb-2">Difficulty</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {(['easy', 'medium', 'hard'] as Difficulty[]).map(d => (
-                        <button key={d} onClick={() => setQueueDiff(d)}
-                          className={`py-3 rounded-xl font-semibold text-sm transition-all ${
-                            queueDiff === d
-                              ? 'bg-purple-600 text-white'
-                              : 'bg-white/10 text-white/60 hover:bg-white/20'
-                          }`}>
-                          {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Medium' : '🚀 Hard'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button onClick={joinQueue}
-                    className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold py-4 rounded-xl transition-all text-lg">
-                    Find Opponent 🎲
+                <div className="flex gap-2">
+                  <button onClick={() => setFriendPanel(null)}
+                    className="bg-white/10 hover:bg-white/20 text-white/60 font-semibold py-3 rounded-xl text-sm transition px-4">
+                    ←
                   </button>
-                </>
-              ) : (
-                <div className="text-center py-6 space-y-4">
-                  <div className="text-5xl animate-bounce">🔍</div>
-                  <p className="text-white font-bold text-xl">Finding opponent...</p>
-                  <p className="text-purple-300 text-sm">
-                    {queueMode === 'realtime' ? '⚡ Real-time' : '🔄 Turn-based'} ·{' '}
-                    {queueDiff === 'easy' ? '🐢 Easy' : queueDiff === 'medium' ? '🐇 Medium' : '🚀 Hard'}
-                  </p>
-                  <div className="bg-white/10 rounded-xl py-3 px-6 inline-block">
-                    <p className="text-white font-mono text-2xl">{formatTime(queueTime)}</p>
-                    <p className="text-purple-300 text-xs">
-                      {queueTime >= 12
-                        ? '⚡ Starting vs AI bot...'
-                        : queueTime >= 8
-                        ? '🤖 No opponent found, preparing AI...'
-                        : 'searching...'}
-                    </p>
-                  </div>
-                  <div className="flex gap-2 justify-center mt-2">
-                    {[0,1,2].map(i => (
-                      <div key={i} className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"
-                        style={{ animationDelay: `${i * 0.15}s` }}/>
-                    ))}
-                  </div>
-                  <button onClick={leaveQueue}
-                    className="text-red-400 hover:text-red-300 text-sm font-semibold transition mt-4 block mx-auto">
-                    ✕ Cancel Search
+                  <button onClick={joinByCode} disabled={joining || joinCode.length < 6}
+                    className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition">
+                    {joining ? 'Joining...' : 'Join Battle 🔗'}
                   </button>
                 </div>
-              )}
-            </>
-          )}
+              </div>
+            )}
+          </div>
+
+          {/* vs Bot */}
+          <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🤖</span>
+              <h2 className="text-white font-bold text-sm">vs Bot</h2>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {(['easy', 'medium', 'hard'] as Difficulty[]).map(d => (
+                <button key={d} onClick={() => setBotDiff(d)}
+                  className={`py-1.5 rounded-lg font-semibold text-xs transition-all ${
+                    botDiff === d ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white'
+                  }`}>
+                  {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Medium' : '🚀 Hard'}
+                </button>
+              ))}
+            </div>
+            <button onClick={startBotBattle} disabled={startingBot}
+              className="w-full bg-white/15 hover:bg-white/25 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition">
+              {startingBot ? 'Starting...' : 'Play Now'}
+            </button>
+          </div>
+
+          {/* Practice */}
+          <Link href="/practice"
+            className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 flex flex-col gap-3 hover:bg-white/15 transition group">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎯</span>
+              <h2 className="text-white font-bold text-sm">Practice</h2>
+            </div>
+            <p className="text-white/40 text-xs flex-1">Solo drills, no pressure</p>
+            <div className="bg-white/10 group-hover:bg-white/20 text-white font-bold py-3 rounded-xl text-sm text-center transition">
+              Start Practicing
+            </div>
+          </Link>
 
         </div>
+
+        {/* Quick links */}
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/leaderboard"
+            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-3 text-center transition">
+            <p className="text-white font-semibold text-sm">🏆 Leaderboard</p>
+          </Link>
+          <Link href="/rewards"
+            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-3 text-center transition">
+            <p className="text-white font-semibold text-sm">🃏 My Cards</p>
+          </Link>
+        </div>
+
       </div>
     </div>
   )
