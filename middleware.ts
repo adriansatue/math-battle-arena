@@ -28,6 +28,13 @@ export async function middleware(request: NextRequest) {
   // Refresh session — keeps user logged in
   const { data: { user } } = await supabase.auth.getUser()
 
+  // Logged-in users visiting the home page go straight to the lobby
+  if (user && request.nextUrl.pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/lobby'
+    return NextResponse.redirect(url)
+  }
+
   // Protect game routes — redirect to login if not authenticated
   const protectedPaths = ['/lobby', '/battle', '/profile', '/leaderboard']
   const isProtected = protectedPaths.some(path =>
