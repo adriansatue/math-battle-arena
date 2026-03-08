@@ -54,6 +54,15 @@ export async function POST(
     })
     .eq('id', id)
 
+  // Settle card bet if active
+  if (battle.bet_status === 'matched' && winnerId) {
+    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/battles/${id}/settle-bet`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ winner_id: winnerId }),
+    })
+  }
+
   // Update winner profile — add points + increment wins
   if (winnerId) {
     const { data: winnerProfile } = await adminSupabase

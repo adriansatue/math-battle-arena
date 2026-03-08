@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback, use, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useBattleChannel } from '@/lib/realtime/useBattleChannel'
 import { Timer }        from '@/components/battle/Timer'
 import { QuestionCard } from '@/components/battle/QuestionCard'
 import { ScoreBar }     from '@/components/battle/ScoreBar'
+import { CardStakeSelector, InventoryItem } from '@/components/battle/CardStakeSelector'
+
+type StakedCardInfo = { name: string; rarity: 'common' | 'uncommon' | 'rare' | 'legendary'; image_url: string }
 
 interface Question {
   id:            string
@@ -31,7 +34,8 @@ interface LastResult {
 export default function BattlePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: battleId } = use(params)
   const router           = useRouter()
-  const supabase         = createClient()
+  // useMemo ensures the same supabase instance across re-renders so subscription effects stay stable
+  const supabase         = useMemo(() => createClient(), [])
 
   const [userId,      setUserId]      = useState('')
   const [username,    setUsername]    = useState('')
@@ -46,6 +50,14 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [status,      setStatus]      = useState<'waiting' | 'active' | 'finished'>('waiting')
   const [serverSentAt, setServerSentAt] = useState<string | null>(null)
   const [reconnecting, setReconnecting] = useState(false)
+
+  // Ref so the stable subscription callback always reads the latest userId
+  const userIdRef = useRef('')
+  useEffect(() => { userIdRef.current = userId }, [userId])
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [myStakedCard,       setMyStakedCard]       = useState<InventoryItem | null>(null)
+  const [opponentStakedCard, setOpponentStakedCard] = useState<StakedCardInfo | null>(null)
 
   // Handle realtime events
   const handleEvent = useCallback(({ type, payload }: {
@@ -108,6 +120,35 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     return () => clearTimeout(timeout)
   }, [status, battleId, router])
 
+  // Polling fallback: while waiting, check every 3s if guest joined and start if so
+  // This backs up the Realtime path which can miss the event after a re-render
+  useEffect(() => {
+    if (status !== 'waiting') return
+
+    const interval = setInterval(async () => {
+      const { data: b } = await supabase
+        .from('battles')
+        .select('id, status, host_id, guest_id')
+        .eq('id', battleId)
+        .single()
+
+      if (!b) return
+
+      if (b.status === 'active') {
+        // Battle already started (Realtime handled it), just clear the poll
+        clearInterval(interval)
+        return
+      }
+
+      if (b.guest_id && b.status === 'waiting' && b.host_id === userIdRef.current) {
+        clearInterval(interval)
+        await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [status, battleId, supabase])
+
   // Load user + battle data
   useEffect(() => {
     async function load() {
@@ -131,6 +172,11 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       if (!battleData) { router.push('/lobby'); return }
       setBattle(battleData)
       setStatus(battleData.status as 'waiting' | 'active' | 'finished')
+
+      // If host loads and guest already joined but battle hasn't started, start it now
+      if (battleData.status === 'waiting' && battleData.guest_id && battleData.host_id === user.id) {
+        await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
+      }
 
       // Fetch questions (safe view — no correct_answer)
       const { data: qs } = await supabase
@@ -197,7 +243,22 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         async (payload) => {
           const updated = payload.new as Record<string, unknown>
 
-          // Opponent just joined
+          // Check opponent's staked card
+          const isHost = userIdRef.current === updated.host_id
+          const opponentStakedId = isHost
+            ? updated.guest_staked_inventory_id
+            : updated.host_staked_inventory_id
+
+          if (opponentStakedId) {
+            const { data } = await supabase
+              .from('user_inventory')
+              .select('reward_catalog(name, rarity, image_url)')
+              .eq('id', opponentStakedId)
+              .single()
+            if (data) setOpponentStakedCard((data as unknown as { reward_catalog: StakedCardInfo }).reward_catalog)
+          }
+
+          // Opponent just joined — host auto-starts the battle
           if (updated.guest_id && updated.status === 'waiting') {
             setBattle(updated)
             setPlayers(prev => {
@@ -210,6 +271,11 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
                 online:   true,
               }]
             })
+
+            // Only the host starts the battle
+            if (userIdRef.current === updated.host_id) {
+              await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
+            }
           }
 
           // Battle started
@@ -391,6 +457,14 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
                 📋 Copy code
               </button>
             </div>
+
+            {/* Card betting */}
+            <CardStakeSelector
+              battleId={battleId}
+              isHost={userId === battle?.host_id as string}
+              opponentStakedCard={opponentStakedCard}
+              onStaked={setMyStakedCard}
+            />
           </>
         )}
       </div>

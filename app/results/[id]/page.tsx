@@ -82,6 +82,27 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
             {isDraw ? 'Perfectly matched!' : isWinner ? 'Outstanding performance!' : 'Keep practicing!'}
           </p>
 
+          {/* Card bet result */}
+          {battle?.bet_status === 'settled' && (
+            <div className={`rounded-2xl p-4 border text-center mb-4 ${
+              isWinner
+                ? 'bg-yellow-500/20 border-yellow-500/30'
+                : 'bg-red-500/20 border-red-500/30'
+            }`}>
+              {isWinner ? (
+                <>
+                  <p className="text-yellow-300 font-bold text-lg">🃏 You won the card bet!</p>
+                  <p className="text-white/60 text-sm mt-1">The staked card has been added to your collection</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-red-300 font-bold text-lg">💸 You lost your staked card!</p>
+                  <p className="text-white/60 text-sm mt-1">Your opponent claimed it — win next time!</p>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Scores */}
           <div className="grid grid-cols-2 gap-4 mb-8">
             {Object.entries(scores).map(([pid, score]) => (
