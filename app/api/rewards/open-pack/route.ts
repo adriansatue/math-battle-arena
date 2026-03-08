@@ -54,7 +54,8 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { pack_type = 'basic' } = await request.json() as { pack_type: PackType }
+  const body = await request.json().catch(() => ({})) as { pack_type?: PackType }
+  const pack_type: PackType = body.pack_type ?? 'basic'
   const config  = PACK_CONFIG[pack_type]
   const weights = WEIGHTS[pack_type]
 
