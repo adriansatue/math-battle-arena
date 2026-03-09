@@ -285,3 +285,30 @@ export function generateQuestionsForCategory(
 
   return questions
 }
+
+export function generateWrongAnswers(correct: number, count: number = 3): number[] {
+  const wrong = new Set<number>()
+  const ranges = [1, 2, 3, 5, 8, 10]
+
+  let attempts = 0
+  while (wrong.size < count && attempts < 100) {
+    attempts++
+    const offset = ranges[Math.floor(Math.random() * ranges.length)]
+    const sign   = Math.random() > 0.5 ? 1 : -1
+    const candidate = correct + sign * offset
+
+    // Keep answers positive and not equal to correct
+    if (candidate !== correct && candidate > 0 && !wrong.has(candidate)) {
+      wrong.add(candidate)
+    }
+  }
+
+  // Fallback if not enough
+  let fallback = 1
+  while (wrong.size < count) {
+    if (fallback !== correct && !wrong.has(fallback)) wrong.add(fallback)
+    fallback++
+  }
+
+  return Array.from(wrong)
+}

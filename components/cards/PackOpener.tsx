@@ -49,7 +49,7 @@ export function PackOpener({ cards, onClose }: PackOpenerProps) {
         <div className="flex flex-wrap justify-center gap-3 mb-6">
           {cards.map((card, i) => (
             <div
-              key={card.id}
+              key={`${card.id}-${i}`}
               className={`transition-all duration-500 ${revealed[i] ? 'scale-100 opacity-100' : 'scale-95 opacity-90'}`}
             >
               {revealed[i] ? (

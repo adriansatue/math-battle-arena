@@ -7,6 +7,10 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Capture arrival time before any async work so DB query latency
+  // doesn't inflate serverValidatedMs and cause false "over-time" results.
+  const requestArrivalMs = Date.now()
+
   const { id } = await params
   const supabase = await createClient()
 
@@ -52,11 +56,11 @@ export async function POST(
 
   // A timestamp is "fresh" only if it was set recently (within 1 question period + 30s buffer)
   const isFreshTimestamp = serverSentAt
-    ? (Date.now() - serverSentAt) <= timeLimitMs + 30_000
+    ? (requestArrivalMs - serverSentAt) <= timeLimitMs + 30_000
     : false
 
   const serverValidatedMs = isFreshTimestamp
-    ? Date.now() - serverSentAt!
+    ? requestArrivalMs - serverSentAt!
     : time_taken_ms
 
   // Mark the answer as over-time but still process it (gives 0 pts via calculatePoints)
@@ -106,11 +110,13 @@ export async function POST(
     else break
   }
 
-  // Update this question's server_sent_at so the NEXT question's timing starts fresh
-  // (All questions share the battle-start timestamp by default — this fixes cumulative drift)
+  // Update this question's server_sent_at so the NEXT question's timing starts fresh.
+  // Offset by the client transition delay (1200ms anim + ~300ms network buffer = 1500ms)
+  // so the clock for the next question only starts when it's actually visible to the player.
+  const NEXT_Q_OFFSET_MS = 1500
   await supabase
     .from('battle_questions')
-    .update({ server_sent_at: new Date().toISOString() })
+    .update({ server_sent_at: new Date(requestArrivalMs + NEXT_Q_OFFSET_MS).toISOString() })
     .eq('battle_id', id)
     .gt('sequence', question.sequence)
     .is('claimed_by', null)  // only unstarted questions

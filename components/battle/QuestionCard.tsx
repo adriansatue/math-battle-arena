@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 interface QuestionCardProps {
   sequence:       number
@@ -12,14 +12,18 @@ interface QuestionCardProps {
   pendingAnswer?: number | null
   correctAnswer?: number | null   // revealed when wrong
   showProgress?:  boolean         // default true
+  hideInput?:     boolean         // hide the typed input (e.g. MC mode)
+  hideQuestion?:  boolean         // hide the question text (shown externally)
 }
 
 export function QuestionCard({
   sequence, total, questionText, onAnswer, disabled,
-  lastResult, pendingAnswer, correctAnswer, showProgress = true,
+  lastResult, pendingAnswer, correctAnswer, showProgress = true, hideInput = false, hideQuestion = false,
 }: QuestionCardProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [flash, setFlash] = useState<'correct' | 'wrong' | null>(null)
+  const flash: 'correct' | 'wrong' | null = lastResult
+    ? (lastResult.correct ? 'correct' : 'wrong')
+    : null
 
   // Focus + clear input when question changes
   useEffect(() => {
@@ -27,14 +31,7 @@ export function QuestionCard({
       inputRef.current.value = ''
       inputRef.current.focus()
     }
-    setFlash(null)
   }, [questionText])
-
-  // Trigger border flash when result arrives
-  useEffect(() => {
-    if (!lastResult) return
-    setFlash(lastResult.correct ? 'correct' : 'wrong')
-  }, [lastResult])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -80,6 +77,7 @@ export function QuestionCard({
       </p>
 
       {/* Question text */}
+      {!hideQuestion && (
       <div className="text-center my-6 min-h-[80px] flex items-center justify-center">
         <p className={`font-black text-white tracking-tight leading-none ${
           questionText.length > 20 ? 'text-4xl' : 'text-6xl'
@@ -87,6 +85,7 @@ export function QuestionCard({
           {questionText} = ?
         </p>
       </div>
+      )}
 
       {/* Feedback row */}
       <div className="min-h-[36px] flex items-center justify-center mb-4">
@@ -116,6 +115,7 @@ export function QuestionCard({
       </div>
 
       {/* Answer form */}
+      {!hideInput && (
       <form onSubmit={handleSubmit} className="flex gap-3">
         <input
           ref={inputRef}
@@ -147,6 +147,7 @@ export function QuestionCard({
           ✓
         </button>
       </form>
+      )}
     </div>
   )
 }
