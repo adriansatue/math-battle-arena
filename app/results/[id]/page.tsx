@@ -5,6 +5,15 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
+interface ReviewItem {
+  sequence:       number
+  questionText:   string
+  answerGiven?:   number
+  isCorrect:      boolean
+  correctAnswer?: number
+  points:         number
+}
+
 export default function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: battleId } = use(params)
   const router   = useRouter()
@@ -14,6 +23,8 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
   const [profiles,   setProfiles]   = useState<Record<string, string>>({})
   const [scores,     setScores]     = useState<Record<string, number>>({})
   const [restarting, setRestarting] = useState(false)
+  const [review,     setReview]     = useState<ReviewItem[]>([])
+  const [showReview, setShowReview] = useState(false)
 
   async function playAgain() {
     setRestarting(true)
@@ -51,6 +62,42 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
       const map: Record<string, string> = {}
       for (const p of (profs ?? [])) map[p.id] = p.username
       setProfiles(map)
+
+      // Fetch per-question review for the current user
+      const [{ data: answers }, { data: qs }] = await Promise.all([
+        supabase
+          .from('battle_answers')
+          .select('question_id, answer_given, is_correct, points_earned')
+          .eq('battle_id', battleId)
+          .eq('player_id', user.id),
+        supabase
+          .from('battle_questions')
+          .select('id, sequence, question_text, correct_answer')
+          .eq('battle_id', battleId)
+          .order('sequence'),
+      ])
+
+      if (answers && qs) {
+        type QRow = { id: string; sequence: number; question_text: string; correct_answer: number }
+        type ARow = { question_id: string; answer_given: number; is_correct: boolean; points_earned: number }
+        const qMap = Object.fromEntries((qs as QRow[]).map(q => [q.id, q]))
+        const items: ReviewItem[] = (answers as ARow[])
+          .map(a => {
+            const q = qMap[a.question_id]
+            if (!q) return null
+            return {
+              sequence:      q.sequence,
+              questionText:  q.question_text,
+              answerGiven:   a.answer_given,
+              isCorrect:     a.is_correct,
+              correctAnswer: a.is_correct ? undefined : q.correct_answer,
+              points:        a.points_earned,
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => a!.sequence - b!.sequence) as ReviewItem[]
+        setReview(items)
+      }
     }
     load()
   }, [battleId, router, supabase])
@@ -127,6 +174,43 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
               }`}>⭐</span>
             ))}
           </div>
+
+          {/* Question review */}
+          {review.length > 0 && (
+            <div className="mb-6 text-left">
+              <button
+                onClick={() => setShowReview(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-white/[0.06] border border-white/10 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition text-sm font-semibold"
+              >
+                <span>📝 Review my answers ({review.filter(r => r.isCorrect).length}/{review.length} correct)</span>
+                <span className="text-xs">{showReview ? '▲ Hide' : '▼ Show'}</span>
+              </button>
+              {showReview && (
+                <div className="mt-2 space-y-2">
+                  {review.map((r, i) => (
+                    <div key={i} className={`rounded-xl px-4 py-3 flex items-start gap-3 border ${
+                      r.isCorrect ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'
+                    }`}>
+                      <span className="text-lg shrink-0">{r.isCorrect ? '✅' : '❌'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold text-sm">{r.questionText} = ?</p>
+                        {r.isCorrect ? (
+                          <p className="text-green-300 text-xs mt-0.5">
+                            Your answer: <strong>{r.answerGiven}</strong> · +{r.points} pts
+                          </p>
+                        ) : (
+                          <p className="text-red-300 text-xs mt-0.5">
+                            You typed: <strong>{r.answerGiven ?? '—'}</strong>
+                            {r.correctAnswer != null && <> · Answer: <strong className="text-white">{r.correctAnswer}</strong></>}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-3">
             <Link href="/rewards"

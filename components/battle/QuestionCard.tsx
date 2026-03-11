@@ -78,12 +78,17 @@ export function QuestionCard({
 
       {/* Question text */}
       {!hideQuestion && (
-      <div className="text-center my-6 min-h-[80px] flex items-center justify-center">
+      <div className="text-center my-6 min-h-[80px] flex flex-col items-center justify-center gap-2">
         <p className={`font-black text-white tracking-tight leading-none ${
           questionText.length > 20 ? 'text-4xl' : 'text-6xl'
         }`}>
           {questionText} = ?
         </p>
+        {questionText.includes('/') && (
+          <p className="text-purple-300/80 text-xs font-medium px-3 py-1 bg-purple-500/10 rounded-full border border-purple-400/20">
+            💡 Give your answer as a decimal — e.g. ½ = <span className="font-bold text-purple-200">0.5</span>
+          </p>
+        )}
       </div>
       )}
 

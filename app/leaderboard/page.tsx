@@ -15,17 +15,42 @@ interface Player {
   best_streak:   number
 }
 
+type Bracket = 'all' | 'beginner' | 'rising' | 'champion'
+
+const BRACKETS: { key: Bracket; label: string; emoji: string; desc: string; min: number; max: number }[] = [
+  { key: 'beginner',  label: 'Beginners',    emoji: '🌱', desc: 'Level 1–2',  min: 1, max: 2 },
+  { key: 'rising',    label: 'Rising Stars', emoji: '⭐', desc: 'Level 3–5',  min: 3, max: 5 },
+  { key: 'champion',  label: 'Champions',    emoji: '🔥', desc: 'Level 6–8',  min: 6, max: 8 },
+  { key: 'all',       label: 'All Players',  emoji: '🌍', desc: 'Everyone',   min: 1, max: 99 },
+]
+
+function bracketForLevel(level: number): Bracket {
+  if (level <= 2) return 'beginner'
+  if (level <= 5) return 'rising'
+  return 'champion'
+}
+
 export default function LeaderboardPage() {
   const [players,   setPlayers]   = useState<Player[]>([])
   const [loading,   setLoading]   = useState(true)
   const [currentId, setCurrentId] = useState('')
+  const [bracket,   setBracket]   = useState<Bracket>('all')
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
 
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) setCurrentId(user.id)
+      if (user) {
+        setCurrentId(user.id)
+        // Auto-select the current player's own bracket
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('level')
+          .eq('id', user.id)
+          .single()
+        if (profile) setBracket(bracketForLevel(profile.level as number))
+      }
 
       const { data } = await supabase
         .from('profiles')
@@ -50,6 +75,11 @@ export default function LeaderboardPage() {
     level >= 4 ? 'text-blue-400'   :
     level >= 2 ? 'text-green-400'  : 'text-gray-400'
 
+  const activeBracket = BRACKETS.find(b => b.key === bracket)!
+  const filtered = bracket === 'all'
+    ? players
+    : players.filter(p => p.level >= activeBracket.min && p.level <= activeBracket.max)
+
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-indigo-900 flex items-center justify-center">
       <div className="text-white animate-pulse text-xl">Loading leaderboard...</div>
@@ -61,34 +91,62 @@ export default function LeaderboardPage() {
       <div className="max-w-2xl mx-auto">
 
         {/* Header */}
-        <div className="text-center mb-8 pt-4">
+        <div className="text-center mb-6 pt-4">
           <h1 className="text-4xl font-bold text-white mb-2">🏆 Leaderboard</h1>
-          <p className="text-purple-300">Top 50 Math Battle champions</p>
+          <p className="text-purple-300">Top Math Battle champions</p>
         </div>
 
+        {/* Bracket filter tabs */}
+        <div className="grid grid-cols-4 gap-2 mb-6">
+          {BRACKETS.map(b => (
+            <button
+              key={b.key}
+              onClick={() => setBracket(b.key)}
+              className={`flex flex-col items-center gap-0.5 py-2.5 px-1 rounded-xl border transition-all ${
+                bracket === b.key
+                  ? 'bg-purple-600/40 border-purple-400/60 text-white'
+                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80'
+              }`}
+            >
+              <span className="text-xl">{b.emoji}</span>
+              <span className="text-xs font-bold leading-tight text-center">{b.label}</span>
+              <span className="text-[10px] opacity-60">{b.desc}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Empty bracket state */}
+        {filtered.length === 0 && (
+          <div className="text-center py-16 text-purple-300">
+            <div className="text-5xl mb-4">{activeBracket.emoji}</div>
+            <p className="font-bold text-white text-lg mb-1">No players here yet!</p>
+            <p className="text-sm">Be the first {activeBracket.label} on the board.</p>
+          </div>
+        )}
+
         {/* Top 3 podium */}
-        {players.length >= 3 && (
+        {filtered.length >= 3 && (
           <div className="grid grid-cols-3 gap-3 mb-6">
             {/* 2nd place */}
             <div className="bg-white/10 rounded-2xl p-4 text-center border border-white/20 mt-6">
               <div className="text-3xl mb-2">🥈</div>
-              <p className="text-white font-bold text-sm truncate">{players[1].username}</p>
-              <p className={`text-xs font-semibold ${levelColor(players[1].level)}`}>
-                Lv.{players[1].level}
+              <p className="text-white font-bold text-sm truncate">{filtered[1].username}</p>
+              <p className={`text-xs font-semibold ${levelColor(filtered[1].level)}`}>
+                Lv.{filtered[1].level}
               </p>
-              <p className="text-white font-bold mt-2">{players[1].total_points.toLocaleString()}</p>
+              <p className="text-white font-bold mt-2">{filtered[1].total_points.toLocaleString()}</p>
               <p className="text-purple-300 text-xs">pts</p>
             </div>
 
             {/* 1st place */}
             <div className="bg-gradient-to-b from-yellow-500/20 to-yellow-600/10 rounded-2xl p-4 text-center border border-yellow-500/40">
               <div className="text-4xl mb-2">👑</div>
-              <p className="text-white font-bold truncate">{players[0].username}</p>
-              <p className={`text-xs font-semibold ${levelColor(players[0].level)}`}>
-                Lv.{players[0].level} · {players[0].rank_title}
+              <p className="text-white font-bold truncate">{filtered[0].username}</p>
+              <p className={`text-xs font-semibold ${levelColor(filtered[0].level)}`}>
+                Lv.{filtered[0].level} · {filtered[0].rank_title}
               </p>
               <p className="text-yellow-400 font-bold text-xl mt-2">
-                {players[0].total_points.toLocaleString()}
+                {filtered[0].total_points.toLocaleString()}
               </p>
               <p className="text-yellow-300 text-xs">pts</p>
             </div>
@@ -96,19 +154,20 @@ export default function LeaderboardPage() {
             {/* 3rd place */}
             <div className="bg-white/10 rounded-2xl p-4 text-center border border-white/20 mt-6">
               <div className="text-3xl mb-2">🥉</div>
-              <p className="text-white font-bold text-sm truncate">{players[2].username}</p>
-              <p className={`text-xs font-semibold ${levelColor(players[2].level)}`}>
-                Lv.{players[2].level}
+              <p className="text-white font-bold text-sm truncate">{filtered[2].username}</p>
+              <p className={`text-xs font-semibold ${levelColor(filtered[2].level)}`}>
+                Lv.{filtered[2].level}
               </p>
-              <p className="text-white font-bold mt-2">{players[2].total_points.toLocaleString()}</p>
+              <p className="text-white font-bold mt-2">{filtered[2].total_points.toLocaleString()}</p>
               <p className="text-purple-300 text-xs">pts</p>
             </div>
           </div>
         )}
 
         {/* Full list */}
+        {filtered.length > 0 && (
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden">
-          {players.map((player, i) => {
+          {filtered.map((player, i) => {
             const isMe      = player.id === currentId
             const winRate   = player.wins + player.losses > 0
               ? Math.round((player.wins / (player.wins + player.losses)) * 100)
@@ -167,6 +226,7 @@ export default function LeaderboardPage() {
             )
           })}
         </div>
+        )}
 
         {/* Nav */}
         <div className="flex gap-3 mt-6">

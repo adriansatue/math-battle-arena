@@ -53,6 +53,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [opponentFinished, setOpponentFinished] = useState(false)
   const [starting,    setStarting]    = useState(false)
   const [startError,  setStartError]  = useState<string | null>(null)
+  const [paused,      setPaused]      = useState(false)
 
   // Synchronous guard against timer/click race (same fix as practice page)
   const answeredRef = useRef(false)
@@ -327,7 +328,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
 
   // Submit answer
   async function handleAnswer(answer: number) {
-    if (answeredRef.current || answered || !questions[currentQ]) return
+    if (answeredRef.current || answered || paused || !questions[currentQ]) return
     answeredRef.current = true
     setAnswered(true)
     setPendingAnswer(answer)   // ← show immediately, before server responds
@@ -540,12 +541,21 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-white font-bold text-lg">⚔️ Battle Arena</h1>
-          {reconnecting && (
-            <span className="text-yellow-400 text-sm animate-pulse">🔄 Reconnecting...</span>
-          )}
-          <span className="text-purple-300 text-sm capitalize">
-            {battle?.mode as string} · {battle?.difficulty as string}
-          </span>
+          <div className="flex items-center gap-3">
+            {reconnecting && (
+              <span className="text-yellow-400 text-sm animate-pulse">🔄 Reconnecting...</span>
+            )}
+            <span className="text-purple-300 text-sm capitalize">
+              {battle?.mode as string} · {battle?.difficulty as string}
+            </span>
+            <button
+              onClick={() => setPaused(true)}
+              aria-label="Pause battle"
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-lg transition"
+            >
+              ⏸
+            </button>
+          </div>
         </div>
 
         {/* Scores */}
@@ -559,7 +569,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
             durationSecs={battle?.time_per_q_secs as number ?? 10}
             serverSentAt={serverSentAt}
             onExpire={handleTimerExpire}
-            paused={answered}
+            paused={answered || paused}
           />
         </div>
 
@@ -576,6 +586,30 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
             />
 
       </div>
+
+      {/* Pause modal */}
+      {paused && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-indigo-950 border border-white/20 rounded-2xl p-8 text-center shadow-2xl w-full max-w-xs mx-4 space-y-5">
+            <div className="text-5xl">⏸</div>
+            <h2 className="text-2xl font-bold text-white">Game Paused</h2>
+            <p className="text-purple-300 text-sm">Your timer is paused while you decide.</p>
+            <button
+              onClick={() => setPaused(false)}
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white font-bold py-3 rounded-2xl text-lg transition"
+            >
+              ▶️ Resume Battle
+            </button>
+            <button
+              onClick={() => router.push('/lobby')}
+              className="w-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white font-semibold py-3 rounded-2xl text-base transition"
+            >
+              🚪 Leave Battle
+            </button>
+            <p className="text-white/30 text-xs">Leaving counts as a forfeit</p>
+          </div>
+        </div>
+      )}
 
       {/* Waiting for opponent overlay */}
       {status === 'finished' && (

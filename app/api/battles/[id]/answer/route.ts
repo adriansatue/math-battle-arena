@@ -54,14 +54,20 @@ export async function POST(
     ? new Date(question.server_sent_at).getTime()
     : null
 
-  // A timestamp is "fresh" only if it was set recently (within 1 question period + 30s buffer)
-  const isFreshTimestamp = serverSentAt
-    ? (requestArrivalMs - serverSentAt) <= timeLimitMs + 30_000
-    : false
+  // Compute raw server-side elapsed time
+  const rawServerMs = serverSentAt ? requestArrivalMs - serverSentAt : null
 
-  const serverValidatedMs = isFreshTimestamp
-    ? requestArrivalMs - serverSentAt!
-    : time_taken_ms
+  // A timestamp is "fresh" only if it was set recently (within 1 question period + 30s buffer).
+  const isFreshTimestamp = rawServerMs !== null && rawServerMs <= timeLimitMs + 30_000
+
+  // If the server clock is fresh BUT shows a time more than a full question period above what
+  // the client reports, the timestamp is stale — this happens when the previous question timed
+  // out without submitting an answer (timer expiry doesn't call the API, so server_sent_at for
+  // the next question is never refreshed). In that case fall back to client-supplied time.
+  const serverValidatedMs =
+    isFreshTimestamp && rawServerMs! <= time_taken_ms + timeLimitMs
+      ? rawServerMs!
+      : time_taken_ms
 
   // Mark the answer as over-time but still process it (gives 0 pts via calculatePoints)
   // A 600ms grace period absorbs click-latency and the timer/answer race condition

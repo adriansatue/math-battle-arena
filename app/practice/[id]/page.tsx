@@ -18,9 +18,10 @@ interface Question {
 }
 
 interface Result {
-  correct:       boolean
-  points:        number
+  correct:        boolean
+  points:         number
   correctAnswer?: number
+  answerGiven?:   number
 }
 
 interface PackCard {
@@ -68,6 +69,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
   const [packCards,     setPackCards]     = useState<PackCard[]>([])
   const [showPack,      setShowPack]      = useState(false)
   const [packError,     setPackError]     = useState<string | null>(null)
+  const [showReview,    setShowReview]    = useState(false)
   const timingsRef   = useRef<number[]>([])
   const answeredRef  = useRef(false)   // synchronous guard against timer/click race
 
@@ -173,6 +175,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
       correct:       data.is_correct ?? false,
       points:        data.points_earned ?? 0,
       correctAnswer: data.correct_answer,
+      answerGiven:   answer,
     }
 
     const adjustedPoints = result.correct
@@ -368,15 +371,59 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
             </div>
           </div>
 
-          {/* Per-question breakdown */}
-          <div className="flex gap-1 justify-center flex-wrap mb-6">
-            {results.map((r, i) => (
-              <div key={i} className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold ${
-                r.correct ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'
-              }`}>
-                {r.correct ? '✔' : '✗'}
+          {/* Per-question review */}
+          <div className="mb-6">
+            {/* Compact dot row */}
+            <div className="flex gap-1 justify-center flex-wrap mb-3">
+              {results.map((r, i) => (
+                <div key={i} className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold ${
+                  r.correct ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'
+                }`}>
+                  {r.correct ? '✔' : '✗'}
+                </div>
+              ))}
+            </div>
+            {/* Expandable detail */}
+            <button
+              onClick={() => setShowReview(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-white/[0.04] border border-white/10 rounded-2xl text-white/60 hover:text-white hover:bg-white/[0.07] transition text-sm font-semibold"
+            >
+              <span>📝 Review my answers</span>
+              <span className="text-xs">{showReview ? '▲ Hide' : '▼ Show'}</span>
+            </button>
+            {showReview && (
+              <div className="mt-2 space-y-2">
+                {questions.map((q, i) => {
+                  const r = results[i]
+                  if (!r) return null
+                  return (
+                    <div key={i} className={`rounded-xl px-4 py-3 flex items-start gap-3 border ${
+                      r.correct ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'
+                    }`}>
+                      <span className="text-lg shrink-0">{r.correct ? '✅' : '❌'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold text-sm">{q.question_text} = ?</p>
+                        {r.correct ? (
+                          <p className="text-green-300 text-xs mt-0.5">
+                            Your answer: <strong>{r.answerGiven}</strong> · +{r.points} pts
+                          </p>
+                        ) : r.answerGiven != null ? (
+                          <p className="text-red-300 text-xs mt-0.5">
+                            You typed: <strong>{r.answerGiven}</strong>
+                            {r.correctAnswer != null && <> · Answer: <strong className="text-white">{r.correctAnswer}</strong></>}
+                          </p>
+                        ) : (
+                          <p className="text-orange-300 text-xs mt-0.5">
+                            ⏰ Time ran out
+                            {r.correctAnswer != null && <> · Answer: <strong className="text-white">{r.correctAnswer}</strong></>}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
+            )}
           </div>
 
           {/* Action buttons */}
