@@ -50,6 +50,12 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [status,      setStatus]      = useState<'waiting' | 'active' | 'finished'>('waiting')
   const [serverSentAt, setServerSentAt] = useState<string | null>(null)
   const [reconnecting, setReconnecting] = useState(false)
+  const [opponentFinished, setOpponentFinished] = useState(false)
+  const [starting,    setStarting]    = useState(false)
+  const [startError,  setStartError]  = useState<string | null>(null)
+
+  // Synchronous guard against timer/click race (same fix as practice page)
+  const answeredRef = useRef(false)
 
   // Ref so the stable subscription callback always reads the latest userId
   const userIdRef = useRef('')
@@ -81,11 +87,9 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     }
 
     if (type === 'player:finished') {
-      // Opponent finished — wait 2s then go to results
-      setTimeout(() => {
-        fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
-          .then(() => router.push(`/results/${battleId}`))
-      }, 2000)
+      // Mark opponent as done. Only redirect if the local player has also finished.
+      // This prevents kicking a player out mid-game when the opponent finishes first.
+      setOpponentFinished(true)
     }
 
     if (type === 'battle:end') {
@@ -115,14 +119,15 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   useEffect(() => {
     if (status !== 'finished') return
 
-    // Redirect to results after 3 seconds regardless
+    // Give the opponent a couple of seconds after we finish; then end regardless
+    const delay = opponentFinished ? 1500 : 3000
     const timeout = setTimeout(() => {
       fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
         .then(() => router.push(`/results/${battleId}`))
-    }, 3000)
+    }, delay)
 
     return () => clearTimeout(timeout)
-  }, [status, battleId, router])
+  }, [status, opponentFinished, battleId, router])
 
   // Polling fallback: while waiting, check every 3s if guest joined and start if so
   // This backs up the Realtime path which can miss the event after a re-render
@@ -144,9 +149,9 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         return
       }
 
-      if (b.guest_id && b.status === 'waiting' && b.host_id === userIdRef.current) {
+      if (b.guest_id && b.status === 'waiting') {
+        // Guest joined — just update local state, host will start manually
         clearInterval(interval)
-        await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
       }
     }, 3000)
 
@@ -176,11 +181,6 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       if (!battleData) { router.push('/lobby'); return }
       setBattle(battleData)
       setStatus(battleData.status as 'waiting' | 'active' | 'finished')
-
-      // If host loads and guest already joined but battle hasn't started, start it now
-      if (battleData.status === 'waiting' && battleData.guest_id && battleData.host_id === user.id) {
-        await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
-      }
 
       // Fetch questions (safe view — no correct_answer)
       const { data: qs } = await supabase
@@ -276,10 +276,6 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
               }]
             })
 
-            // Only the host starts the battle
-            if (userIdRef.current === updated.host_id) {
-              await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
-            }
           }
 
           // Battle started
@@ -287,17 +283,24 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
             setBattle(updated)
             setStatus('active')
 
-            // Fetch questions
-            const { data: qs } = await supabase
-              .from('battle_questions_safe')
-              .select('*')
-              .eq('battle_id', battleId)
-              .order('sequence')
+            // Fetch questions — retry once with a delay to handle the race where
+            // the Realtime event arrives before questions are fully readable in the DB.
+            const fetchQuestions = async (attempt = 1) => {
+              const { data: qs } = await supabase
+                .from('battle_questions_safe')
+                .select('*')
+                .eq('battle_id', battleId)
+                .order('sequence')
 
-            if (qs && qs.length > 0) {
-              setQuestions(qs as Question[])
-              setServerSentAt(new Date().toISOString())
+              if (qs && qs.length > 0) {
+                setQuestions(qs as Question[])
+                setServerSentAt(new Date().toISOString())
+              } else if (attempt < 4) {
+                // Retry with back-off: 500ms, 1000ms, 2000ms
+                setTimeout(() => fetchQuestions(attempt + 1), attempt * 500)
+              }
             }
+            fetchQuestions()
           }
         }
       )
@@ -306,9 +309,26 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     return () => { supabase.removeChannel(subscription) }
   }, [battleId, supabase])
 
+  // Host manually starts the battle
+  async function startBattle() {
+    setStarting(true)
+    setStartError(null)
+    const res = await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
+    if (!res.ok) {
+      const d = await res.json()
+      setStartError(
+        d.error === 'bet_not_matched'
+          ? '⚠️ Waiting for opponent to match your card bet first'
+          : (d.message ?? d.error ?? 'Failed to start')
+      )
+    }
+    setStarting(false)
+  }
+
   // Submit answer
   async function handleAnswer(answer: number) {
-    if (answered || !questions[currentQ]) return
+    if (answeredRef.current || answered || !questions[currentQ]) return
+    answeredRef.current = true
     setAnswered(true)
     setPendingAnswer(answer)   // ← show immediately, before server responds
 
@@ -383,6 +403,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           const freshTimestamp = new Date().toISOString()
           setCurrentQ(prev => prev + 1)
           setAnswered(false)
+          answeredRef.current = false
           setLastResult(null)
           setPendingAnswer(null)
           setCorrectAnswer(null)
@@ -397,25 +418,26 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   }
 
   function handleTimerExpire() {
-    if (!answered) {
-      setAnswered(true)
-      setPendingAnswer(null)
-      setCorrectAnswer(null)
-      setLastResult({ correct: false, points: 0 })
-      setTimeout(() => {
-        if (currentQ + 1 < questions.length) {
-          setCurrentQ(prev => prev + 1)
-          setAnswered(false)
-          setLastResult(null)
-          setPendingAnswer(null)
-          setCorrectAnswer(null)
-          setServerSentAt(new Date().toISOString())
-        } else {
-          broadcast('player:finished', { player_id: userId })
-          setStatus('finished')
-        }
-      }, 1000)
-    }
+    if (answeredRef.current || answered) return
+    answeredRef.current = true
+    setAnswered(true)
+    setPendingAnswer(null)
+    setCorrectAnswer(null)
+    setLastResult({ correct: false, points: 0 })
+    setTimeout(() => {
+      if (currentQ + 1 < questions.length) {
+        setCurrentQ(prev => prev + 1)
+        setAnswered(false)
+        answeredRef.current = false
+        setLastResult(null)
+        setPendingAnswer(null)
+        setCorrectAnswer(null)
+        setServerSentAt(new Date().toISOString())
+      } else {
+        broadcast('player:finished', { player_id: userId })
+        setStatus('finished')
+      }
+    }, 1000)
   }
 
   // ── WAITING STATE ──────────────────────────
@@ -429,21 +451,49 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
 
         {hasOpponent ? (
           <>
-            <h2 className="text-3xl font-bold text-white">Opponent found!</h2>
-            <div className="bg-green-500/20 border border-green-500/30 rounded-2xl p-4">
-              <p className="text-green-300 text-sm mb-3">Ready to battle</p>
-              <div className="flex justify-center gap-8">
+            <h2 className="text-2xl font-bold text-white">⚔️ Opponent found!</h2>
+
+            {/* Players */}
+            <div className="bg-white/10 border border-white/10 rounded-2xl p-4">
+              <div className="flex justify-center gap-12">
                 {players.map(p => (
                   <div key={p.userId} className="text-center">
                     <div className="text-2xl mb-1">{p.userId === userId ? '⚔️' : '🛡️'}</div>
                     <p className="text-white text-sm font-bold">{p.username}</p>
+                    <p className="text-white/40 text-xs">{p.userId === userId ? 'You' : 'Opponent'}</p>
                   </div>
                 ))}
               </div>
             </div>
-            <p className="text-purple-300 text-sm animate-pulse">
-              ⏳ Starting battle...
-            </p>
+
+            {/* Card betting — both players see this */}
+            <CardStakeSelector
+              battleId={battleId}
+              isHost={userId === battle?.host_id as string}
+              opponentStakedCard={opponentStakedCard}
+              onStaked={setMyStakedCard}
+            />
+
+            {/* Host gets Start button; guest waits */}
+            {userId === battle?.host_id as string ? (
+              <div className="space-y-2">
+                {startError && (
+                  <p className="text-yellow-300 text-sm text-center animate-pulse">{startError}</p>
+                )}
+                <button
+                  onClick={startBattle}
+                  disabled={starting}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 disabled:opacity-50 text-white font-bold py-4 rounded-2xl text-lg shadow-lg transition"
+                >
+                  {starting ? '⏳ Starting...' : '⚔️ Start Battle!'}
+                </button>
+                <p className="text-white/30 text-xs text-center">Card wager is optional — you can start without one</p>
+              </div>
+            ) : (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                <p className="text-purple-300 text-sm animate-pulse">⏳ Waiting for host to start the battle...</p>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -462,7 +512,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
               </button>
             </div>
 
-            {/* Card betting */}
+            {/* Card betting (host alone — before opponent joins) */}
             <CardStakeSelector
               battleId={battleId}
               isHost={userId === battle?.host_id as string}

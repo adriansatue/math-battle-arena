@@ -180,6 +180,20 @@ export function generateTargetedQuestions(
   const seen = new Set<string>()
   let attempts = 0
 
+  // Calculate the max unique questions possible for the given options so we
+  // can allow repeats once the pool is exhausted (e.g. 1 times table = 12 unique).
+  let poolSize = Infinity
+  if (category === 'multiplication') {
+    const tableOpt  = options.timesTable
+    const tablePool = Array.isArray(tableOpt) ? tableOpt : tableOpt ? [tableOpt] : null
+    const otherRange = difficulty === 'hard' ? 11 : 12 // rand(2,12) vs rand(1,12)
+    poolSize = (tablePool ? tablePool.length : 11) * otherRange
+  } else if (category === 'division') {
+    const divisorOpt  = options.divisor
+    const divisorPool = Array.isArray(divisorOpt) ? divisorOpt : divisorOpt ? [divisorOpt] : null
+    poolSize = (divisorPool ? divisorPool.length : 11) * 12
+  }
+
   while (questions.length < count && attempts < count * 30) {
     attempts++
     let q: Question | null = null
@@ -243,9 +257,13 @@ export function generateTargetedQuestions(
       q = makeOrderOfOps()
     }
 
-    if (q && !seen.has(q.question_text)) {
-      seen.add(q.question_text)
-      questions.push({ ...q, difficulty })
+    if (q) {
+      // Allow repeats once the unique pool is exhausted (e.g. 30 questions on a single times table)
+      const poolExhausted = seen.size >= poolSize
+      if (poolExhausted || !seen.has(q.question_text)) {
+        seen.add(q.question_text)
+        questions.push({ ...q, difficulty })
+      }
     }
   }
 

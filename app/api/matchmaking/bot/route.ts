@@ -22,15 +22,12 @@ async function getOrCreateBot(
   const { data: existing } = await adminSupabase.auth.admin.listUsers()
   const found = existing?.users?.find((u) => u.email === meta.email)
   if (found) {
-    // Make sure the profile row is in sync
+    // Only sync identity fields — never reset stats
     await adminSupabase.from('profiles').upsert({
-      id:           found.id,
-      username:     meta.username,
-      level:        meta.level,
-      rank_title:   'AI Challenger',
-      total_points: 0,
-      wins:         0,
-      losses:       0,
+      id:         found.id,
+      username:   meta.username,
+      level:      meta.level,
+      rank_title: 'AI Challenger',
     }, { onConflict: 'id' })
     return found.id
   }

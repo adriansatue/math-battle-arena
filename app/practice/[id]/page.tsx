@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Timer }        from '@/components/battle/Timer'
 import { QuestionCard } from '@/components/battle/QuestionCard'
+import { PackOpener }   from '@/components/cards/PackOpener'
 import { generateWrongAnswers } from '@/lib/game/questions'
 import Link from 'next/link'
 
@@ -20,6 +21,14 @@ interface Result {
   correct:       boolean
   points:        number
   correctAnswer?: number
+}
+
+interface PackCard {
+  id:          string
+  name:        string
+  description: string
+  rarity:      'common' | 'uncommon' | 'rare' | 'legendary'
+  image_url:   string
 }
 
 interface Summary {
@@ -54,7 +63,13 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
   const [loading,      setLoading]      = useState(true)
   const [mcOptions,    setMcOptions]    = useState<number[]>([])
   const [mcSelected,   setMcSelected]   = useState<number | null>(null)
-  const timingsRef = useRef<number[]>([])
+  const [profilePoints, setProfilePoints] = useState<number | null>(null)
+  const [opening,       setOpening]       = useState(false)
+  const [packCards,     setPackCards]     = useState<PackCard[]>([])
+  const [showPack,      setShowPack]      = useState(false)
+  const [packError,     setPackError]     = useState<string | null>(null)
+  const timingsRef   = useRef<number[]>([])
+  const answeredRef  = useRef(false)   // synchronous guard against timer/click race
 
   async function fetchMcOptions(questionId: string): Promise<number[]> {
     const { data } = await supabase
@@ -115,10 +130,25 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
       avgMs,
     })
     setFinished(true)
+
+    // Fetch updated profile points after a short delay to let the finish API settle
+    setTimeout(async () => {
+      const sb = createClient()
+      const { data: { user } } = await sb.auth.getUser()
+      if (user) {
+        const { data: profile } = await sb
+          .from('profiles')
+          .select('total_points')
+          .eq('id', user.id)
+          .single()
+        if (profile) setProfilePoints(profile.total_points)
+      }
+    }, 800)
   }, [battleId])
 
   const handleAnswer = useCallback(async (answer: number) => {
-    if (answered || !questions[currentQ]) return
+    if (answeredRef.current || answered || !questions[currentQ]) return
+    answeredRef.current = true
     setAnswered(true)
     setPendingAnswer(answer)
 
@@ -165,6 +195,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
       if (currentQ + 1 < questions.length) {
         setCurrentQ(prev => prev + 1)
         setAnswered(false)
+        answeredRef.current = false
         setPendingAnswer(null)
         setLastResult(null)
         setMcSelected(null)
@@ -176,26 +207,27 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
   }, [answered, questions, currentQ, serverSentAt, battleId, results, finishSession, POINTS_MULTIPLIER])
 
   function handleTimerExpire() {
-    if (!answered) {
-      setAnswered(true)
-      setPendingAnswer(null)
-      const result: Result = { correct: false, points: 0 }
-      setLastResult(result)
-      setResults(prev => [...prev, result])
-      setStreak(0)
-      setTimeout(() => {
-        if (currentQ + 1 < questions.length) {
-          setCurrentQ(prev => prev + 1)
-          setAnswered(false)
-          setPendingAnswer(null)
-          setLastResult(null)
-          setMcSelected(null)
-          setServerSentAt(new Date().toISOString())
-        } else {
-          finishSession([...results, result])
-        }
-      }, 1000)
-    }
+    if (answeredRef.current || answered) return
+    answeredRef.current = true
+    setAnswered(true)
+    setPendingAnswer(null)
+    const result: Result = { correct: false, points: 0 }
+    setLastResult(result)
+    setResults(prev => [...prev, result])
+    setStreak(0)
+    setTimeout(() => {
+      if (currentQ + 1 < questions.length) {
+        setCurrentQ(prev => prev + 1)
+        setAnswered(false)
+        answeredRef.current = false
+        setPendingAnswer(null)
+        setLastResult(null)
+        setMcSelected(null)
+        setServerSentAt(new Date().toISOString())
+      } else {
+        finishSession([...results, result])
+      }
+    }, 1000)
   }
 
   if (loading) return (
@@ -204,6 +236,23 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
     </div>
   )
 
+  async function openPack(packType: 'basic' | 'rare' | 'legendary') {
+    setOpening(true)
+    setPackError(null)
+    const res  = await fetch('/api/rewards/open-pack', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ pack_type: packType }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setPackError(data.error); setOpening(false); return }
+    const costs = { basic: 500, rare: 2000, legendary: 5000 }
+    setPackCards(data.cards)
+    setProfilePoints(prev => prev !== null ? prev - costs[packType] : null)
+    setShowPack(true)
+    setOpening(false)
+  }
+
   // ── SUMMARY SCREEN ──────────────────────────────
   if (finished && summary) {
     const stars = summary.accuracy >= 90 ? 5 :
@@ -211,71 +260,146 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
                   summary.accuracy >= 60 ? 3 :
                   summary.accuracy >= 40 ? 2 : 1
 
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-indigo-900 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 text-center">
+    const PACKS = [
+      { id: 'basic',     label: 'Basic',     emoji: '📦', cost: 500,  color: 'from-slate-400 to-slate-500',   glow: 'shadow-slate-400/20' },
+      { id: 'rare',      label: 'Rare',      emoji: '💎', cost: 2000, color: 'from-blue-400 to-cyan-500',     glow: 'shadow-blue-400/20'  },
+      { id: 'legendary', label: 'Legendary', emoji: '👑', cost: 5000, color: 'from-yellow-400 to-amber-500',  glow: 'shadow-yellow-400/20' },
+    ]
 
-            <div className="text-6xl mb-4">
+    const perfLabel = summary.accuracy >= 90 ? 'Outstanding! 🔥' :
+                      summary.accuracy >= 75 ? 'Great work!' :
+                      summary.accuracy >= 60 ? 'Keep it up!' : 'Keep practicing!'
+
+    return (
+      <div className="min-h-screen bg-[#0a0a12] flex items-center justify-center p-4">
+
+        {/* Background glow */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-3xl"/>
+        </div>
+
+        <div className="w-full max-w-md relative">
+
+          {/* Trophy / icon */}
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 shadow-2xl shadow-yellow-500/30 mb-4 text-4xl">
               {summary.accuracy >= 80 ? '🏆' : summary.accuracy >= 60 ? '💪' : '📚'}
             </div>
-
-            <h1 className="text-3xl font-bold text-white mb-1">Practice Complete!</h1>
-            <p className="text-purple-300 mb-6">
-              {summary.accuracy >= 90 ? 'Outstanding!' :
-               summary.accuracy >= 75 ? 'Great work!' :
-               summary.accuracy >= 60 ? 'Keep it up!' : 'Keep practicing!'}
-            </p>
-
-            {/* Stars */}
-            <div className="flex justify-center gap-1 mb-6">
-              {[1,2,3,4,5].map(i => (
-                <span key={i} className={`text-3xl transition-all ${i <= stars ? 'opacity-100' : 'opacity-20'}`}>
-                  ⭐
-                </span>
-              ))}
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {[
-                { label: 'Correct',   value: `${summary.correct}/${summary.total}`, emoji: '✅' },
-                { label: 'Accuracy',  value: `${summary.accuracy}%`,                emoji: '🎯' },
-                { label: 'Points',    value: summary.points.toLocaleString(),        emoji: '⭐' },
-                { label: 'Avg Speed', value: `${(summary.avgMs / 1000).toFixed(1)}s`, emoji: '⚡' },
-              ].map(stat => (
-                <div key={stat.label} className="bg-white/5 rounded-xl p-3">
-                  <div className="text-xl mb-1">{stat.emoji}</div>
-                  <div className="text-white font-bold text-lg">{stat.value}</div>
-                  <div className="text-purple-300 text-xs">{stat.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Per-question breakdown */}
-            <div className="flex gap-1 justify-center mb-6">
-              {results.map((r, i) => (
-                <div key={i} className={`w-6 h-6 rounded-full text-xs flex items-center justify-center font-bold ${
-                  r.correct ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-                }`}>
-                  {r.correct ? '✔' : '✗'}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-3">
-              <Link href="/practice"
-                className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition text-center">
-                🔄 Practice Again
-              </Link>
-              <Link href="/lobby"
-                className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3 rounded-xl transition text-center">
-                ⚔️ Battle!
-              </Link>
-            </div>
-
+            <h1 className="text-4xl font-black text-white mb-1 tracking-tight">Practice Complete!</h1>
+            <p className="text-purple-300 text-sm font-semibold">{perfLabel}</p>
           </div>
+
+          {/* Stars */}
+          <div className="flex justify-center gap-2 mb-6">
+            {[1,2,3,4,5].map(i => (
+              <span key={i} className={`text-3xl transition-all ${i <= stars ? 'opacity-100 drop-shadow-[0_0_6px_rgba(250,204,21,0.7)]' : 'opacity-15'}`}>
+                ⭐
+              </span>
+            ))}
+          </div>
+
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {[
+              { label: 'Correct',    value: `${summary.correct}/${summary.total}`, emoji: '✅', sub: `${summary.accuracy}% accuracy` },
+              { label: 'Avg Speed',  value: `${(summary.avgMs / 1000).toFixed(1)}s`, emoji: '⚡', sub: 'per question' },
+            ].map(stat => (
+              <div key={stat.label} className="bg-white/[0.04] border border-white/10 rounded-2xl p-4 text-center">
+                <div className="text-2xl mb-1">{stat.emoji}</div>
+                <div className="text-white font-black text-2xl">{stat.value}</div>
+                <div className="text-white/40 text-xs mt-0.5">{stat.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Points earned + total balance */}
+          <div className="bg-gradient-to-r from-violet-600/20 to-purple-600/10 border border-violet-500/30 rounded-2xl p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/40 text-xs uppercase tracking-widest font-bold mb-0.5">Earned this session</p>
+                <p className="text-3xl font-black text-yellow-400">+{summary.points.toLocaleString()} <span className="text-base font-bold text-yellow-400/60">pts</span></p>
+              </div>
+              <div className="text-right">
+                <p className="text-white/40 text-xs uppercase tracking-widest font-bold mb-0.5">Your total</p>
+                {profilePoints !== null ? (
+                  <p className="text-3xl font-black text-white">{profilePoints.toLocaleString()} <span className="text-base font-bold text-white/40">pts</span></p>
+                ) : (
+                  <p className="text-2xl font-black text-white/30 animate-pulse">...</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Pack affordability */}
+          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 mb-6">
+            <p className="text-white/40 text-xs uppercase tracking-widest font-bold mb-3">Packs you can open</p>
+            {packError && (
+              <p className="text-red-400 text-xs mb-3 text-center">{packError}</p>
+            )}
+            <div className="grid grid-cols-3 gap-2">
+              {PACKS.map(pack => {
+                const canAfford  = profilePoints !== null ? Math.floor(profilePoints / pack.cost) : null
+                const affordable = canAfford !== null && canAfford > 0
+                return (
+                  <div key={pack.id} className={`rounded-xl p-3 text-center border transition-all ${
+                    affordable
+                      ? `bg-gradient-to-b ${pack.color} bg-opacity-10 border-white/20 shadow-lg ${pack.glow}`
+                      : 'bg-white/[0.02] border-white/[0.06]'
+                  }`}>
+                    <div className="text-2xl mb-1">{pack.emoji}</div>
+                    <p className={`text-xs font-bold mb-0.5 ${affordable ? 'text-white' : 'text-white/30'}`}>{pack.label}</p>
+                    <p className={`text-xs mb-2 ${affordable ? 'text-white/50' : 'text-white/20'}`}>{pack.cost.toLocaleString()} pts</p>
+                    <button
+                      onClick={() => affordable && !opening && openPack(pack.id as 'basic' | 'rare' | 'legendary')}
+                      disabled={!affordable || opening || profilePoints === null}
+                      className={`w-full rounded-lg py-1.5 text-xs font-black transition-all ${
+                        affordable && !opening
+                          ? 'bg-white/25 hover:bg-white/40 text-white active:scale-95 cursor-pointer'
+                          : 'bg-white/5 text-white/20 cursor-not-allowed'
+                      }`}
+                    >
+                      {canAfford === null ? '...' :
+                       opening ? '⏳' :
+                       affordable ? `Open ×${canAfford}` : '✕'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Per-question breakdown */}
+          <div className="flex gap-1 justify-center flex-wrap mb-6">
+            {results.map((r, i) => (
+              <div key={i} className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold ${
+                r.correct ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'
+              }`}>
+                {r.correct ? '✔' : '✗'}
+              </div>
+            ))}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-3">
+            <Link href="/practice"
+              className="flex-1 bg-white/[0.06] hover:bg-white/[0.10] border border-white/10 text-white font-bold py-4 rounded-2xl transition text-center text-sm">
+              🔄 Practice Again
+            </Link>
+            <Link href="/lobby"
+              className="flex-1 bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold py-4 rounded-2xl transition text-center text-sm shadow-lg shadow-purple-500/30 hover:-translate-y-0.5">
+              ⚔️ Battle!
+            </Link>
+          </div>
+
         </div>
+
+        {/* Pack opener overlay */}
+        {showPack && packCards.length > 0 && (
+          <PackOpener
+            cards={packCards}
+            onClose={() => setShowPack(false)}
+          />
+        )}
       </div>
     )
   }
@@ -342,8 +466,8 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
 
         {/* Question card */}
         <div className={`rounded-3xl border-2 text-center px-8 py-8 transition-all duration-300 ${
-          answered && lastResult?.correct  ? 'border-green-400/60 bg-green-500/10 shadow-lg shadow-green-900/20' :
-          answered && !lastResult?.correct ? 'border-red-400/60 bg-red-500/10 shadow-lg shadow-red-900/20' :
+          answered && lastResult?.correct === true  ? 'border-green-400/60 bg-green-500/10 shadow-lg shadow-green-900/20' :
+          answered && lastResult?.correct === false ? 'border-red-400/60 bg-red-500/10 shadow-lg shadow-red-900/20' :
           'border-white/10 bg-white/5'
         }`}>
           <p className="text-white font-black text-5xl tracking-tight leading-none">
@@ -384,9 +508,10 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
           <div className="grid grid-cols-2 gap-3">
             {mcOptions.map((option, i) => {
               const isSelected = mcSelected === option
-              const isCorrect  = answered && lastResult?.correct && isSelected
-              const isWrong    = answered && !lastResult?.correct && isSelected
-              const wasCorrect = answered && !lastResult?.correct &&
+              const isPending  = isSelected && answered && lastResult === null
+              const isCorrect  = answered && lastResult?.correct === true  && isSelected
+              const isWrong    = answered && lastResult?.correct === false && isSelected
+              const wasCorrect = answered && lastResult?.correct === false &&
                 option === lastResult?.correctAnswer
 
               return (
@@ -399,6 +524,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
                   }}
                   disabled={answered}
                   className={`py-5 rounded-2xl text-2xl font-bold transition-all duration-200 border-2 ${
+                    isPending  ? 'bg-purple-600/40 border-purple-400 text-white shadow-lg shadow-purple-900/30 scale-[1.02] animate-pulse' :
                     isCorrect  ? 'bg-green-500/30 border-green-400 text-green-100 shadow-lg shadow-green-900/30 scale-[1.02]' :
                     isWrong    ? 'bg-red-500/25 border-red-400/80 text-red-200' :
                     wasCorrect ? 'bg-green-500/15 border-green-400/50 text-green-300' :

@@ -80,8 +80,8 @@ export default function PracticePage() {
   const [questions,  setQuestions]  = useState(10)
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
-  const [timesTable, setTimesTable] = useState<number | 'all'>('all')
-  const [divisor,    setDivisor]    = useState<number | 'all'>('all')
+  const [timesTable, setTimesTable] = useState<number[]>([])
+  const [divisor,    setDivisor]    = useState<number[]>([])
   const [addMax,     setAddMax]     = useState<number>(100)
   const [subMax,     setSubMax]     = useState<number>(100)
 
@@ -99,8 +99,8 @@ export default function PracticePage() {
     setError(null)
 
     const options: Record<string, unknown> = {}
-    if (category === 'multiplication' && timesTable !== 'all') options.timesTable = timesTable
-    if (category === 'division'       && divisor    !== 'all') options.divisor    = divisor
+    if (category === 'multiplication' && timesTable.length > 0) options.timesTable = timesTable.length === 1 ? timesTable[0] : timesTable
+    if (category === 'division'       && divisor.length > 0) options.divisor    = divisor.length === 1 ? divisor[0] : divisor
     if (category === 'addition')       options.maxNumber = addMax
     if (category === 'subtraction')    options.maxNumber = subMax
 
@@ -181,8 +181,8 @@ export default function PracticePage() {
                 key={cat.id}
                 onClick={() => {
                   setCategory(cat.id as Category)
-                  setTimesTable('all')
-                  setDivisor('all')
+                  setTimesTable([])
+                  setDivisor([])
                   setAddMax(100)
                   setSubMax(100)
                   setDifficulty(null)
@@ -224,32 +224,41 @@ export default function PracticePage() {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => setTimesTable('all')}
+                    onClick={() => setTimesTable([])}
                     className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                      timesTable === 'all'
+                      timesTable.length === 0
                         ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
                         : 'bg-white/5 text-white/50 hover:bg-white/10'
                     }`}
                   >
                     🎲 Mixed
                   </button>
-                  {TIMES_TABLES.map(n => (
-                    <button
-                      key={n}
-                      onClick={() => setTimesTable(n)}
-                      className={`w-11 h-11 rounded-xl text-sm font-black transition-all ${
-                        timesTable === n
-                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30 scale-110'
-                          : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
+                  {TIMES_TABLES.map(n => {
+                    const selected = timesTable.includes(n)
+                    return (
+                      <button
+                        key={n}
+                        onClick={() => {
+                          setTimesTable(
+                            selected
+                              ? timesTable.filter(t => t !== n)
+                              : [...timesTable, n]
+                          )
+                        }}
+                        className={`w-11 h-11 rounded-xl text-sm font-black transition-all ${
+                          selected
+                            ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30 scale-110'
+                            : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    )
+                  })}
                 </div>
-                {timesTable !== 'all' && (
+                {Array.isArray(timesTable) && timesTable.length > 0 && (
                   <p className="text-violet-400 text-xs mt-3 font-semibold">
-                    → Practicing {timesTable} × 1 through {timesTable} × 12
+                    → Practicing: {timesTable.slice().sort((a,b)=>a-b).map(t => `${t}×`).join('  ')}
                   </p>
                 )}
               </>
@@ -262,32 +271,41 @@ export default function PracticePage() {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => setDivisor('all')}
+                    onClick={() => setDivisor([])}
                     className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                      divisor === 'all'
+                      divisor.length === 0
                         ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/30'
                         : 'bg-white/5 text-white/50 hover:bg-white/10'
                     }`}
                   >
                     🎲 Mixed
                   </button>
-                  {TIMES_TABLES.map(n => (
-                    <button
-                      key={n}
-                      onClick={() => setDivisor(n)}
-                      className={`w-11 h-11 rounded-xl text-sm font-black transition-all ${
-                        divisor === n
-                          ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/30 scale-110'
-                          : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
+                  {TIMES_TABLES.map(n => {
+                    const selected = divisor.includes(n)
+                    return (
+                      <button
+                        key={n}
+                        onClick={() => {
+                          setDivisor(
+                            selected
+                              ? divisor.filter(d => d !== n)
+                              : [...divisor, n]
+                          )
+                        }}
+                        className={`w-11 h-11 rounded-xl text-sm font-black transition-all ${
+                          selected
+                            ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/30 scale-110'
+                            : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    )
+                  })}
                 </div>
-                {divisor !== 'all' && (
+                {divisor.length > 0 && (
                   <p className="text-amber-400 text-xs mt-3 font-semibold">
-                    → Practicing ? ÷ {divisor} = 1 through 12
+                    → Practicing: {divisor.slice().sort((a,b)=>a-b).map(d => `÷${d}`).join('  ')}
                   </p>
                 )}
               </>

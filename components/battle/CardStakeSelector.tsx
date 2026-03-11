@@ -26,6 +26,13 @@ interface CardStakeSelectorProps {
   onStaked:  (item: InventoryItem | null) => void
 }
 
+const rarityBadgeColor = {
+  common:    'bg-gray-500/30 text-gray-300',
+  uncommon:  'bg-green-500/30 text-green-300',
+  rare:      'bg-blue-500/30 text-blue-300',
+  legendary: 'bg-yellow-500/30 text-yellow-300',
+}
+
 export function CardStakeSelector({
   battleId, isHost, opponentStakedCard, onStaked
 }: CardStakeSelectorProps) {
@@ -84,92 +91,144 @@ export function CardStakeSelector({
     rarityOrder[a.reward_catalog.rarity] - rarityOrder[b.reward_catalog.rarity]
   )
 
+  // Status badge
+  const bothStaked  = staked && !!opponentStakedCard
+  const mustMatch   = !staked && !!opponentStakedCard
+  const awaitingOpp = staked && !opponentStakedCard
+
   return (
-    <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-      <h3 className="text-white font-bold text-sm mb-3">
-        🃏 Card Bet{' '}
-        <span className="text-white/40 font-normal">
-          {opponentStakedCard ? '(required to proceed)' : '(optional)'}
+    <div className={`rounded-2xl p-4 border transition-all ${
+      mustMatch
+        ? 'bg-yellow-500/10 border-yellow-500/40 shadow-lg shadow-yellow-500/10'
+        : bothStaked
+        ? 'bg-green-500/10 border-green-500/40 shadow-lg shadow-green-500/10'
+        : 'bg-white/5 border-white/10'
+    }`}>
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-white font-bold text-sm">🃏 Card Wager</h3>
+        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold border transition-all ${
+          bothStaked  ? 'bg-green-500/20 text-green-300 border-green-500/30' :
+          awaitingOpp ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30 animate-pulse' :
+          mustMatch   ? 'bg-red-500/20   text-red-300   border-red-500/30   animate-pulse' :
+                        'bg-white/10     text-white/40  border-white/10'
+        }`}>
+          {bothStaked  ? '✅ Matched — ready!' :
+           awaitingOpp ? '⏳ Awaiting opponent' :
+           mustMatch   ? '⚠️ Must match to start!' :
+                         'Optional'}
         </span>
-      </h3>
+      </div>
 
-      {/* Opponent's staked card */}
-      {opponentStakedCard && (
-        <div className="mb-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3">
-          <p className="text-yellow-300 text-xs font-semibold mb-2">
-            ⚔️ Opponent staked a card — you must match the bet to start!
-          </p>
-          <div className="flex items-center gap-3">
-            <RewardCard
-              name={opponentStakedCard.name}
-              description=""
-              rarity={opponentStakedCard.rarity}
-              image_url={opponentStakedCard.image_url}
-            />
-            <div>
-              <p className="text-white font-bold">{opponentStakedCard.name}</p>
-              <p className="text-white/40 text-xs capitalize">{opponentStakedCard.rarity}</p>
+      {/* Duel layout: [Your Stake] [VS] [Opponent's Stake] */}
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-start">
+
+        {/* ── Your slot ── */}
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-white/50 text-xs uppercase tracking-wider">Your Stake</p>
+
+          {staked && selected ? (
+            <div className="relative">
+              <RewardCard
+                name={selected.reward_catalog.name}
+                description=""
+                rarity={selected.reward_catalog.rarity}
+                image_url={selected.reward_catalog.image_url}
+              />
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-green-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow">
+                ✅ Staked
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          ) : (
+            <button
+              onClick={() => inventory.length > 0 && setShow(true)}
+              disabled={inventory.length === 0}
+              className={`w-[144px] h-[208px] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 transition-all ${
+                mustMatch
+                  ? 'border-yellow-400/70 bg-yellow-500/10 hover:bg-yellow-500/20'
+                  : 'border-white/20 bg-white/5 hover:bg-white/10 disabled:opacity-40'
+              }`}
+            >
+              <div className={`text-3xl ${mustMatch ? 'animate-bounce' : ''}`}>
+                {inventory.length === 0 ? '🚫' : mustMatch ? '⚔️' : '+'}
+              </div>
+              <p className={`text-xs text-center px-2 leading-snug ${mustMatch ? 'text-yellow-300 font-semibold' : 'text-white/40'}`}>
+                {inventory.length === 0
+                  ? 'No cards yet'
+                  : mustMatch
+                  ? 'Tap to match!'
+                  : 'Stake a card'}
+              </p>
+            </button>
+          )}
 
-      {/* Staked card display */}
-      {staked && selected ? (
-        <div className="flex items-center gap-3">
-          <RewardCard
-            name={selected.reward_catalog.name}
-            description=""
-            rarity={selected.reward_catalog.rarity}
-            image_url={selected.reward_catalog.image_url}
-          />
-          <div className="flex-1">
-            <p className="text-white font-bold">{selected.reward_catalog.name}</p>
-            <p className="text-green-400 text-xs">✅ Staked for this battle</p>
-            <p className="text-white/40 text-xs mt-1">Winner takes this card!</p>
-            {!opponentStakedCard && (
-              <p className="text-yellow-300 text-xs mt-1 animate-pulse">⏳ Waiting for opponent to match the bet...</p>
-            )}
+          {staked && (
             <button
               onClick={unstakeCard}
               disabled={loading}
-              className="text-red-400 hover:text-red-300 text-xs mt-2 transition"
+              className="text-red-400 hover:text-red-300 text-xs transition mt-1"
             >
-              Remove stake
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {inventory.length === 0 ? (
-            <p className="text-white/30 text-sm">
-              No cards yet — win battles and open packs to get cards!
-            </p>
-          ) : (
-            <button
-              onClick={() => setShow(true)}
-              className={`w-full font-bold py-3 rounded-xl transition text-sm border ${
-                opponentStakedCard
-                  ? 'bg-gradient-to-r from-yellow-500/40 to-orange-500/40 hover:from-yellow-500/60 hover:to-orange-500/60 border-yellow-500/60 text-yellow-200 animate-pulse'
-                  : 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 border-yellow-500/30 text-yellow-300'
-              }`}
-            >
-              {opponentStakedCard ? '⚔️ Match the Bet to Proceed' : '🃏 Stake a Card to Win'}
+              {loading ? 'Removing…' : 'Remove stake'}
             </button>
           )}
-        </>
+        </div>
+
+        {/* ── VS divider ── */}
+        <div className="flex items-center justify-center mt-16">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center border font-bold text-xs transition-all ${
+            bothStaked
+              ? 'bg-green-500/30 border-green-400/50 text-green-300'
+              : 'bg-white/10 border-white/20 text-white/40'
+          }`}>
+            VS
+          </div>
+        </div>
+
+        {/* ── Opponent's slot ── */}
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-white/50 text-xs uppercase tracking-wider">Their Stake</p>
+
+          {opponentStakedCard ? (
+            <div className="relative">
+              <RewardCard
+                name={opponentStakedCard.name}
+                description=""
+                rarity={opponentStakedCard.rarity}
+                image_url={opponentStakedCard.image_url}
+              />
+              <div className={`absolute -bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow capitalize ${
+                rarityBadgeColor[opponentStakedCard.rarity]
+              }`}>
+                ⚔️ {opponentStakedCard.rarity}
+              </div>
+            </div>
+          ) : (
+            <div className="w-[144px] h-[208px] rounded-2xl border-2 border-dashed border-white/10 bg-white/5 flex flex-col items-center justify-center gap-2">
+              <div className="text-3xl opacity-20">?</div>
+              <p className="text-white/25 text-xs">Awaiting…</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Winner takes all footer */}
+      {(staked || opponentStakedCard) && (
+        <p className={`text-center text-xs mt-5 transition-all ${bothStaked ? 'text-green-300/70' : 'text-white/30'}`}>
+          🏆 Winner takes both cards
+        </p>
       )}
 
       {/* Card picker modal */}
       {show && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 rounded-2xl border border-gray-700 p-6 w-full max-w-lg max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
               <h2 className="text-white font-bold text-xl">Pick a Card to Stake</h2>
-              <button onClick={() => setShow(false)} className="text-gray-400 hover:text-white text-2xl">×</button>
+              <button onClick={() => setShow(false)} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
             </div>
             <p className="text-gray-400 text-sm mb-4">
-              If you win, you keep your card and take your opponents. If you lose, your opponent takes this card!
+              Win → you keep yours and take theirs. Lose → they take yours.
             </p>
 
             <div className="flex flex-wrap gap-3 overflow-y-auto flex-1 justify-center pb-4">
@@ -178,7 +237,9 @@ export function CardStakeSelector({
                   key={item.id}
                   onClick={() => setSelected(item)}
                   className={`cursor-pointer transition-all ${
-                    selected?.id === item.id ? 'scale-110 ring-2 ring-purple-400 rounded-2xl' : 'hover:scale-105'
+                    selected?.id === item.id
+                      ? 'scale-110 ring-2 ring-purple-400 rounded-2xl'
+                      : 'hover:scale-105 opacity-80 hover:opacity-100'
                   }`}
                 >
                   <RewardCard
@@ -203,7 +264,7 @@ export function CardStakeSelector({
                 disabled={!selected || loading}
                 className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 disabled:opacity-40 text-black font-bold py-3 rounded-xl transition"
               >
-                {loading ? 'Staking...' : '⚔️ Stake This Card!'}
+                {loading ? 'Staking…' : '⚔️ Stake This Card!'}
               </button>
             </div>
           </div>

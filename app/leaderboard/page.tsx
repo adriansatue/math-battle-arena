@@ -30,6 +30,8 @@ export default function LeaderboardPage() {
       const { data } = await supabase
         .from('profiles')
         .select('id, username, total_points, level, rank_title, wins, losses, best_streak')
+        .neq('rank_title', 'AI Challenger')
+        .not('username', 'ilike', '%MathBot%')
         .order('total_points', { ascending: false })
         .limit(50)
 
@@ -40,7 +42,7 @@ export default function LeaderboardPage() {
   }, [])
 
   const rankEmoji = (i: number) =>
-    i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`
+    i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`
 
   const levelColor = (level: number) =>
     level >= 8 ? 'text-yellow-400' :
@@ -80,7 +82,7 @@ export default function LeaderboardPage() {
 
             {/* 1st place */}
             <div className="bg-gradient-to-b from-yellow-500/20 to-yellow-600/10 rounded-2xl p-4 text-center border border-yellow-500/40">
-              <div className="text-4xl mb-2">🥇</div>
+              <div className="text-4xl mb-2">👑</div>
               <p className="text-white font-bold truncate">{players[0].username}</p>
               <p className={`text-xs font-semibold ${levelColor(players[0].level)}`}>
                 Lv.{players[0].level} · {players[0].rank_title}

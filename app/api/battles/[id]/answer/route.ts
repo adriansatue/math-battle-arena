@@ -64,7 +64,10 @@ export async function POST(
     : time_taken_ms
 
   // Mark the answer as over-time but still process it (gives 0 pts via calculatePoints)
-  const isOverTime = serverValidatedMs > timeLimitMs
+  // A 600ms grace period absorbs click-latency and the timer/answer race condition
+  // where handleTimerExpire and handleAnswer fire in the same JS tick.
+  const GRACE_MS = 600
+  const isOverTime = serverValidatedMs > timeLimitMs + GRACE_MS
 
   // Check if already answered by this player
   const { data: existing } = await supabase
