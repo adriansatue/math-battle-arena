@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { SwordLogo } from '@/components/SwordLogo'
 
 export default function NavBar() {
   const pathname = usePathname()
@@ -48,8 +49,9 @@ export default function NavBar() {
       {/* Desktop top nav */}
       <nav className="hidden sm:flex fixed top-0 left-0 right-0 z-40 bg-black/30 backdrop-blur-md border-b border-white/10">
         <div className="max-w-4xl mx-auto w-full flex items-center justify-between px-6 h-14">
-          <Link href="/lobby" className="text-white font-bold text-lg flex items-center gap-2">
-            ⚔️ <span className="hidden md:block">Math Battle Arena</span>
+          <Link href="/" className="text-white font-bold text-lg flex items-center gap-2">
+            <SwordLogo className="w-7 h-7" id="nav" />
+            <span className="hidden md:block">Math Battle Arena</span>
           </Link>
           <div className="flex items-center gap-1">
             {links.map(link => {

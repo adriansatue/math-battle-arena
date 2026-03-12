@@ -6,7 +6,7 @@ export const DIFFICULTY_MULTIPLIER: Record<Difficulty, number> = {
   hard:   2.0,
 }
 
-const BASE_POINTS       = 100
+export const BASE_POINTS = 100
 const MAX_SPEED_BONUS   = 50
 const FIRST_ANSWER_BONUS = 30
 const WIN_BONUS         = 200

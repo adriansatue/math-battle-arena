@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { login, sendMagicLink } from '@/lib/supabase/actions'
+import { DemoButton } from '@/components/DemoButton'
 
 type Mode = 'password' | 'magic'
 
@@ -118,6 +119,20 @@ export default function LoginPage() {
           Sign up free
         </Link>
       </p>
+
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-white/10" />
+        </div>
+        <div className="relative flex justify-center">
+          <span className="px-3 bg-transparent text-white/30 text-xs">or</span>
+        </div>
+      </div>
+
+      <DemoButton
+        className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white font-semibold py-3 rounded-xl text-sm transition"
+        label="👀 Try as Guest — no sign-up needed"
+      />
     </div>
   )
 }

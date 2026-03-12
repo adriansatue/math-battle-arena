@@ -33,7 +33,7 @@ export async function POST(
   if (loserStakedId) {
     await adminSupabase
       .from('user_inventory')
-      .update({ user_id: winner_id, obtained_via: 'card_bet_win' })
+      .update({ user_id: winner_id, obtained_via: 'admin_grant' })
       .eq('id', loserStakedId)
   }
 

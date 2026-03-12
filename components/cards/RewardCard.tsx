@@ -3,25 +3,76 @@
 import Image from 'next/image'
 
 interface RewardCardProps {
-  name:        string
-  description: string
-  rarity:      'common' | 'uncommon' | 'rare' | 'legendary'
-  image_url:   string
+  name:          string
+  description:   string
+  rarity:        'common' | 'uncommon' | 'rare' | 'legendary'
+  image_url:     string
+  grade?:        number
   obtained_via?: string
-  isNew?:      boolean
-  flipped?:    boolean
-  onClick?:    () => void
+  isNew?:        boolean
+  flipped?:      boolean
+  onClick?:      () => void
+}
+
+const GRADE_LABEL: Record<number, string> = {
+  10: 'Gem Mint',
+  9:  'Mint',
+  8:  'NM-MT',
+  7:  'Near Mint',
+  6:  'EX-MT',
+  5:  'Excellent',
+}
+
+const GRADE_GRADIENT: Record<number, string> = {
+  10: 'from-yellow-300 via-amber-400 to-yellow-300 text-black',
+  9:  'from-emerald-400 via-teal-400 to-emerald-400 text-black',
+  8:  'from-blue-400 via-indigo-400 to-blue-400 text-white',
+  7:  'from-violet-400 via-purple-400 to-violet-400 text-white',
+  6:  'from-gray-400 via-gray-500 to-gray-400 text-white',
+  5:  'from-gray-600 via-gray-700 to-gray-600 text-white/80',
 }
 
 const rarityConfig = {
-  common:    { color: 'from-gray-500 to-gray-600',     border: 'border-gray-400/50',    label: '⚪ Common',    glow: '' },
-  uncommon:  { color: 'from-green-500 to-teal-600',    border: 'border-green-400/50',   label: '🟢 Uncommon',  glow: 'shadow-green-500/30' },
-  rare:      { color: 'from-blue-500 to-indigo-600',   border: 'border-blue-400/50',    label: '🔵 Rare',      glow: 'shadow-blue-500/40' },
-  legendary: { color: 'from-yellow-400 to-orange-500', border: 'border-yellow-400/60',  label: '⭐ Legendary', glow: 'shadow-yellow-500/50' },
+  common: {
+    header:  'from-gray-500 to-gray-600',
+    border:  'border-gray-400/50',
+    imgBg:   'from-gray-800 to-gray-900',
+    glowBg:  'bg-gray-400',
+    shadow:  '',
+    label:   'Common',
+    dot:     'bg-gray-300',
+  },
+  uncommon: {
+    header:  'from-green-500 to-teal-600',
+    border:  'border-green-400/60',
+    imgBg:   'from-green-950 to-gray-900',
+    glowBg:  'bg-green-400',
+    shadow:  'shadow-green-500/40',
+    label:   'Uncommon',
+    dot:     'bg-green-400',
+  },
+  rare: {
+    header:  'from-blue-500 to-indigo-600',
+    border:  'border-blue-400/70',
+    imgBg:   'from-blue-950 to-indigo-950',
+    glowBg:  'bg-blue-400',
+    shadow:  'shadow-blue-500/50',
+    label:   'Rare',
+    dot:     'bg-blue-400',
+  },
+  legendary: {
+    header:  'from-yellow-400 to-orange-500',
+    border:  'border-yellow-400/80',
+    imgBg:   'from-yellow-950 to-orange-950',
+    glowBg:  'bg-yellow-400',
+    shadow:  'shadow-yellow-500/60',
+    label:   'Legendary',
+    dot:     'bg-yellow-400',
+  },
 }
 
 export function RewardCard({
-  name, description, rarity, image_url, isNew, flipped, onClick
+  name, description, rarity, image_url, grade, isNew, flipped, onClick
 }: RewardCardProps) {
   const cfg = rarityConfig[rarity] ?? rarityConfig.common
 
@@ -37,24 +88,44 @@ export function RewardCard({
   }
 
   return (
-    <div
-      onClick={onClick}
-      className={`relative w-36 h-52 rounded-2xl border-2 ${cfg.border} bg-gradient-to-b from-gray-900 to-gray-800 overflow-hidden shadow-xl ${cfg.glow ? `shadow-lg ${cfg.glow}` : ''} ${onClick ? 'cursor-pointer hover:scale-105 transition-transform' : ''} ${isNew ? 'ring-2 ring-white/50 animate-pulse' : ''}`}
-    >
-      {/* Rarity header */}
-      <div className={`bg-gradient-to-r ${cfg.color} px-2 py-1 text-center`}>
-        <span className="text-white text-xs font-bold">{cfg.label}</span>
+    <div className={`relative w-36 ${onClick ? 'cursor-pointer hover:scale-105 transition-transform duration-200' : ''}`}>
+      {/* NEW badge — outside the overflow-hidden card so it's never clipped */}
+      {isNew && (
+        <div className="absolute -top-3 -left-3 z-20 -rotate-12">
+          <div className="relative bg-gradient-to-br from-yellow-300 to-orange-400 text-black text-xs font-black px-2 py-1 rounded-lg shadow-lg shadow-orange-500/50 leading-none tracking-wide border border-yellow-200/60">
+            ✦ NEW
+            <div className="absolute inset-0 rounded-lg overflow-hidden pointer-events-none">
+              <div className="absolute -left-4 top-0 h-full w-3 bg-white/40 skew-x-12 animate-[shine_2.5s_ease-in-out_infinite]" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inner card — overflow-hidden stays here for rounded corners */}
+      <div
+        onClick={onClick}
+        className={`relative rounded-2xl border-2 ${cfg.border} overflow-hidden shadow-xl ${cfg.shadow ? `shadow-lg ${cfg.shadow}` : ''} ${isNew ? 'ring-2 ring-white/60' : ''}`}
+        style={{ background: 'linear-gradient(160deg, #1c1040 0%, #0e0825 100%)' }}
+      >
+      {/* Rarity strip */}
+      <div className={`bg-gradient-to-r ${cfg.header} px-2.5 py-1 flex items-center gap-1.5`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} flex-shrink-0 shadow-sm`} />
+        <span className="text-white text-xs font-bold tracking-wide uppercase">{cfg.label}</span>
       </div>
 
-      {/* Card image */}
-      <div className="flex items-center justify-center h-28 p-2 bg-white/5 relative">
+      {/* Image area */}
+      <div className={`relative h-28 bg-gradient-to-b ${cfg.imgBg} flex items-center justify-center p-2`}>
+        {/* Radial glow behind artwork */}
+        <div className={`absolute inset-0 flex items-center justify-center pointer-events-none`}>
+          <div className={`w-20 h-20 rounded-full ${cfg.glowBg} opacity-10 blur-2xl`} />
+        </div>
         {image_url ? (
           <Image
             src={image_url}
             alt={name}
-            width={112}
-            height={112}
-            className="max-h-full max-w-full object-contain drop-shadow-lg"
+            width={108}
+            height={108}
+            className="relative z-10 max-h-full max-w-full object-contain drop-shadow-xl"
             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
           />
         ) : (
@@ -62,23 +133,35 @@ export function RewardCard({
         )}
       </div>
 
+      {/* Divider */}
+      <div className={`h-px bg-gradient-to-r ${cfg.header} opacity-40`} />
+
       {/* Card info */}
-      <div className="p-2 text-center">
-        <p className="text-white font-bold text-sm truncate">{name}</p>
-        <p className="text-gray-400 text-xs mt-0.5 line-clamp-2">{description}</p>
+      <div className="px-2.5 pt-2 pb-2 text-center">
+        <p className="text-white font-bold text-sm leading-tight truncate">{name}</p>
+        <p className="text-gray-400/80 text-xs mt-0.5 line-clamp-2 leading-snug">{description}</p>
       </div>
 
-      {/* New badge */}
-      {isNew && (
-        <div className="absolute top-1 right-1 bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full">
-          NEW
+      {/* Grade slab footer */}
+      {grade != null && (
+        <div className="mx-2 mb-2 rounded-lg overflow-hidden">
+          <div className={`bg-gradient-to-r ${GRADE_GRADIENT[grade] ?? GRADE_GRADIENT[5]} flex items-center justify-between px-2 py-1.5`}>
+            <span className="text-xs font-black tracking-wider">TAG {grade}</span>
+            <span className="text-xs font-semibold opacity-90">{GRADE_LABEL[grade]}</span>
+          </div>
         </div>
       )}
 
       {/* Legendary shimmer */}
       {rarity === 'legendary' && (
-        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-yellow-400/10 to-transparent animate-pulse pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-yellow-300/8 to-transparent animate-pulse pointer-events-none" />
       )}
+
+      {/* Rare holographic sheen */}
+      {rarity === 'rare' && (
+        <div className="absolute inset-0 bg-gradient-to-bl from-blue-300/5 via-transparent to-indigo-300/5 pointer-events-none" />
+      )}
+      </div>{/* end inner card */}
     </div>
   )
 }

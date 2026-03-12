@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { DemoButton } from '@/components/DemoButton'
+import { SwordLogo } from '@/components/SwordLogo'
 
 export const metadata: Metadata = {
   title: 'Math Battle Arena — Free Multiplayer Maths Game for Kids',
@@ -50,12 +52,14 @@ export default async function Home() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 flex flex-col">
 
       {/* ── HERO ─────────────────────────────────────── */}
-      <main className="flex flex-col items-center justify-center px-4 pt-24 pb-16 text-center">
+      <main className="flex flex-col items-center justify-center px-4 pt-12 pb-16 text-center">
         <div className="inline-flex items-center gap-2 bg-purple-500/20 border border-purple-400/30 rounded-full px-4 py-1.5 text-purple-300 text-sm font-semibold mb-8">
           ✨ 100% Free  ·  No downloads  ·  Works on any device
         </div>
 
-        <div className="text-7xl sm:text-8xl drop-shadow-2xl animate-bounce mb-6">⚔️</div>
+        <div className="drop-shadow-2xl animate-bounce mb-6">
+          <SwordLogo className="w-24 h-24 sm:w-32 sm:h-32" id="hero" />
+        </div>
 
         <h1 className="text-5xl sm:text-7xl font-black text-white tracking-tight leading-none mb-4">
           Math Battle
@@ -85,16 +89,22 @@ export default async function Home() {
             </Link>
           </div>
         ) : (
-          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
-            <Link href="/signup"
-              className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white font-black text-lg py-4 rounded-2xl shadow-xl shadow-purple-900/50 transition-all hover:-translate-y-0.5 hover:shadow-2xl text-center">
-              Play Free 🚀
-            </Link>
-            <Link href="/login"
-              className="flex-1 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-lg py-4 rounded-2xl transition-all hover:-translate-y-0.5 text-center backdrop-blur-sm">
-              Sign In
-            </Link>
-          </div>
+          <>
+            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
+              <Link href="/signup"
+                className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white font-black text-lg py-4 rounded-2xl shadow-xl shadow-purple-900/50 transition-all hover:-translate-y-0.5 hover:shadow-2xl text-center">
+                Play Free 🚀
+              </Link>
+              <Link href="/login"
+                className="flex-1 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-lg py-4 rounded-2xl transition-all hover:-translate-y-0.5 text-center backdrop-blur-sm">
+                Sign In
+              </Link>
+            </div>
+            <DemoButton
+              className="mt-3 w-full max-w-sm bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white font-semibold py-3 rounded-2xl text-sm transition"
+              label="👀 Try as Guest — no sign-up needed"
+            />
+          </>
         )}
       </main>
 

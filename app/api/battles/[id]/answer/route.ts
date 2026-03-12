@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { calculatePoints, isFlagged } from '@/lib/game/scoring'
+import { calculatePoints, isFlagged, BASE_POINTS, DIFFICULTY_MULTIPLIER } from '@/lib/game/scoring'
 import type { Difficulty } from '@/lib/game/questions'
 
 export async function POST(
@@ -130,8 +130,11 @@ export async function POST(
     .gt('sequence', question.sequence)
     .is('claimed_by', null)  // only unstarted questions
 
-  // Calculate points (returns 0 if isOverTime)
-  const pointsEarned = isOverTime ? 0 : calculatePoints({
+  // Calculate points.
+  // If overtime but still correct, award base points only (no speed/streak/first bonus).
+  // This prevents the confusing "+0 pts" on a correct answer caused by borderline timing.
+  const baseOnlyPoints = isCorrect ? Math.round(BASE_POINTS * DIFFICULTY_MULTIPLIER[battle.difficulty as Difficulty]) : 0
+  const pointsEarned = isOverTime ? baseOnlyPoints : calculatePoints({
     difficulty:    battle.difficulty as Difficulty,
     isCorrect,
     timeTakenMs:   serverValidatedMs,

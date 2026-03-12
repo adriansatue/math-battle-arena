@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -19,7 +19,7 @@ interface FlaggedAnswer {
 
 export default function AdminFlaggedPage() {
   const router   = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [answers,  setAnswers]  = useState<FlaggedAnswer[]>([])
   const [loading,  setLoading]  = useState(true)

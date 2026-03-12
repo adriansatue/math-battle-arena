@@ -47,6 +47,27 @@ const WEIGHTS: Record<PackType, Record<string, number>> = {
   },
 }
 
+// TAG Grading Scale: 5 (Excellent) → 10 (Gem Mint)
+// https://taggrading.com/pages/scale
+const GRADE_WEIGHTS: [number, number][] = [
+  [10, 1],   // 1%  — Gem Mint
+  [9,  8],   // 8%  — Mint
+  [8,  16],  // 16% — Near Mint-Mint
+  [7,  25],  // 25% — Near Mint
+  [6,  30],  // 30% — Excellent-Mint
+  [5,  20],  // 20% — Excellent
+]
+
+function rollGrade(): number {
+  const total = GRADE_WEIGHTS.reduce((s, [, w]) => s + w, 0)
+  let rand = Math.random() * total
+  for (const [grade, weight] of GRADE_WEIGHTS) {
+    rand -= weight
+    if (rand <= 0) return grade
+  }
+  return 5
+}
+
 export async function POST(request: Request) {
   const supabase      = await createClient()
   const adminSupabase = createAdminClient()
@@ -114,6 +135,9 @@ export async function POST(request: Request) {
     weightedPick(),
   ]
 
+  // Assign a TAG grade (5–10) to each card
+  const grades = picks.map(() => rollGrade())
+
   // Deduct points
   await adminSupabase
     .from('profiles')
@@ -121,21 +145,29 @@ export async function POST(request: Request) {
     .eq('id', user.id)
 
   // Add to inventory
-  await adminSupabase
+  const { error: insertError } = await adminSupabase
     .from('user_inventory')
-    .insert(picks.map(card => ({
+    .insert(picks.map((card, i) => ({
       user_id:      user.id,
       reward_id:    card.id,
-      obtained_via: `${pack_type}_pack`,
+      obtained_at:  new Date().toISOString(),
+      obtained_via: 'pack_reward',
+      grade:        grades[i],
     })))
 
+  if (insertError) {
+    console.error('[open-pack] insert error:', insertError)
+    return NextResponse.json({ error: 'Failed to save cards: ' + insertError.message }, { status: 500 })
+  }
+
   return NextResponse.json({
-    cards: picks.map(c => ({
+    cards: picks.map((c, i) => ({
       id:          c.id,
       name:        c.name,
       description: c.description,
       rarity:      c.rarity,
       image_url:   c.image_url,
+      grade:       grades[i],
     }))
   })
 }

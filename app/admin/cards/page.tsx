@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -22,7 +22,7 @@ const EMPTY_CARD = {
 
 export default function AdminCardsPage() {
   const router   = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [cards,   setCards]   = useState<Card[]>([])
   const [loading, setLoading] = useState(true)

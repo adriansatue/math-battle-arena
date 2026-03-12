@@ -171,31 +171,7 @@ export default function LobbyPage() {
   const formatTime = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-  // ── INSTANT BOT BATTLE ────────────────────────────
-  const [botDiff,      setBotDiff]      = useState<Difficulty>('medium')
-  const [startingBot,  setStartingBot]  = useState(false)
 
-  async function startBotBattle() {
-    setStartingBot(true)
-    setError(null)
-    try {
-      const res  = await fetch('/api/matchmaking/bot', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ mode: 'realtime', difficulty: botDiff, bot_difficulty: botDiff }),
-      })
-      const data = await res.json()
-      if (data.battle_id) {
-        router.push(`/battle/${data.battle_id}`)
-      } else {
-        setError(data.error ?? 'Failed to start bot battle')
-        setStartingBot(false)
-      }
-    } catch {
-      setError('Failed to start bot battle')
-      setStartingBot(false)
-    }
-  }
 
   // ── RENDER ────────────────────────────────────────
   return (
@@ -219,7 +195,7 @@ export default function LobbyPage() {
           <div className="flex items-center gap-2">
             <span className="text-xl">⚡</span>
             <h2 className="text-white font-bold text-lg">Quick Battle</h2>
-            <span className="text-white/40 text-xs ml-auto">vs real players</span>
+            <span className="text-white/40 text-xs ml-auto">vs players · bot after 15s</span>
           </div>
 
           <div className="grid grid-cols-3 gap-2">
@@ -351,37 +327,15 @@ export default function LobbyPage() {
             )}
           </div>
 
-          {/* vs Bot */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🤖</span>
-              <h2 className="text-white font-bold text-sm">vs Bot</h2>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {(['easy', 'medium', 'hard'] as Difficulty[]).map(d => (
-                <button key={d} onClick={() => setBotDiff(d)}
-                  className={`py-1.5 rounded-lg font-semibold text-xs transition-all ${
-                    botDiff === d ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white'
-                  }`}>
-                  {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Medium' : '🚀 Hard'}
-                </button>
-              ))}
-            </div>
-            <button onClick={startBotBattle} disabled={startingBot}
-              className="w-full bg-white/15 hover:bg-white/25 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition">
-              {startingBot ? 'Starting...' : 'Play Now'}
-            </button>
-          </div>
-
-          {/* Practice */}
+          {/* Practice – full width */}
           <Link href="/practice"
-            className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 flex flex-col gap-3 hover:bg-white/15 transition group">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🎯</span>
-              <h2 className="text-white font-bold text-sm">Practice</h2>
+            className="col-span-2 bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 flex items-center gap-4 hover:bg-white/15 transition group">
+            <span className="text-3xl">🎯</span>
+            <div className="flex-1">
+              <h2 className="text-white font-bold">Practice Mode</h2>
+              <p className="text-white/40 text-xs mt-0.5">Solo drills — pick any topic, no pressure</p>
             </div>
-            <p className="text-white/40 text-xs flex-1">Solo drills, no pressure</p>
-            <div className="bg-white/10 group-hover:bg-white/20 text-white font-bold py-3 rounded-xl text-sm text-center transition">
+            <div className="bg-white/10 group-hover:bg-white/20 text-white font-bold px-5 py-3 rounded-xl text-sm transition shrink-0">
               Start Practicing
             </div>
           </Link>
