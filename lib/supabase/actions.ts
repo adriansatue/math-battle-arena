@@ -23,7 +23,7 @@ export async function signUp(formData: FormData) {
     return { error: 'Username is already taken. Try another one!' }
   }
 
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -34,6 +34,14 @@ export async function signUp(formData: FormData) {
 
   if (error) return { error: error.message }
 
+  // Email confirmation is disabled in Supabase — session is returned immediately.
+  // Redirect the user straight to the lobby instead of asking them to check email.
+  if (data.session) {
+    revalidatePath('/', 'layout')
+    redirect('/lobby')
+  }
+
+  // Email confirmation is enabled — user must click the link in their inbox.
   return { success: 'Check your email to confirm your account!' }
 }
 
@@ -68,6 +76,33 @@ export async function sendMagicLink(formData: FormData) {
   if (error) return { error: error.message }
 
   return { success: 'Magic link sent! Check your email 🪄' }
+}
+
+// ── RESET PASSWORD (send email) ───────────────
+export async function sendPasswordReset(formData: FormData) {
+  const supabase = await createClient()
+  const email    = formData.get('email') as string
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/reset-password`,
+  })
+
+  if (error) return { error: error.message }
+
+  return { success: 'Password reset link sent! Check your email.' }
+}
+
+// ── UPDATE PASSWORD (after clicking reset link) ─
+export async function updatePassword(formData: FormData) {
+  const supabase  = await createClient()
+  const password  = formData.get('password') as string
+
+  const { error } = await supabase.auth.updateUser({ password })
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  redirect('/lobby')
 }
 
 // ── LOGOUT ────────────────────────────────────

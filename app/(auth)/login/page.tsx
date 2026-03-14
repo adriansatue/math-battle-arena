@@ -83,9 +83,14 @@ export default function LoginPage() {
 
         {mode === 'password' && (
           <div>
-            <label className="block text-purple-200 text-sm font-medium mb-1">
-              Password
-            </label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-purple-200 text-sm font-medium">
+                Password
+              </label>
+              <Link href="/forgot-password" className="text-xs text-purple-400 hover:text-purple-200 transition">
+                Forgot password?
+              </Link>
+            </div>
             <input
               name="password"
               type="password"
