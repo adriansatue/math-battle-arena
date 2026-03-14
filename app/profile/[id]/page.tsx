@@ -45,6 +45,7 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
   const [profile,    setProfile]    = useState<Profile | null>(null)
   const [weaknesses, setWeaknesses] = useState<Weakness[]>([])
   const [isMe,       setIsMe]       = useState(false)
+  const [email,      setEmail]      = useState<string | null>(null)
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
       if (!user) { router.push('/login'); return }
 
       setIsMe(user.id === id)
+      if (user.id === id) setEmail(user.email ?? null)
 
       const { data: prof } = await supabase
         .from('profiles')
@@ -117,6 +119,14 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
               <h1 className="text-2xl font-bold text-white">{profile.username}</h1>
               <p className={`text-sm font-semibold bg-gradient-to-r ${levelColor} bg-clip-text text-transparent`}>
                 Level {profile.level} · {profile.rank_title}
+              </p>
+              {isMe && email && (
+                <p className="text-white/40 text-xs mt-0.5">
+                  ✉️ {email}
+                </p>
+              )}
+              <p className="text-white/30 text-xs mt-0.5">
+                🗓️ Joined {new Date(profile.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
               </p>
             </div>
             {isMe && (
