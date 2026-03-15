@@ -146,8 +146,8 @@ export function RewardCard({
       {grade != null && (
         <div className="mx-2 mb-2 rounded-lg overflow-hidden">
           <div className={`bg-gradient-to-r ${GRADE_GRADIENT[grade] ?? GRADE_GRADIENT[5]} flex items-center justify-between px-2 py-1.5`}>
-            <span className="text-xs font-black tracking-wider">TAG {grade}</span>
-            <span className="text-xs font-semibold opacity-90">{GRADE_LABEL[grade]}</span>
+            <span className="text-[10px] font-black tracking-wide">Grade {grade}</span>
+            <span className="text-[10px] font-semibold opacity-90 truncate ml-1">{GRADE_LABEL[grade]}</span>
           </div>
         </div>
       )}

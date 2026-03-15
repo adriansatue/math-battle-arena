@@ -141,8 +141,8 @@ function FlipCard({
           {/* Grade badge */}
           {card.grade != null && (
             <div className={`mx-2 mb-1.5 rounded-lg px-2 py-1 flex items-center justify-between bg-gradient-to-r ${GRADE_COLOR[card.grade] ?? GRADE_COLOR[5]}`}>
-              <span className="text-xs font-black">TAG {card.grade}</span>
-              <span className="text-xs font-semibold opacity-90">{GRADE_LABEL[card.grade]}</span>
+              <span className="text-[10px] font-black">Grade {card.grade}</span>
+              <span className="text-[10px] font-semibold opacity-90 truncate ml-1">{GRADE_LABEL[card.grade]}</span>
             </div>
           )}
 
