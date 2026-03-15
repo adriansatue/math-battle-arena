@@ -15,6 +15,7 @@ interface InventoryCard {
     description: string
     rarity:      'common' | 'uncommon' | 'rare' | 'legendary'
     image_url:   string
+    generation?: number | null
   }
 }
 
@@ -24,6 +25,7 @@ interface PackCard {
   description: string
   rarity:      'common' | 'uncommon' | 'rare' | 'legendary'
   image_url:   string
+  generation?: number | null
   grade?:      number
 }
 
@@ -258,6 +260,7 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
                 description={item.reward_catalog.description}
                 rarity={item.reward_catalog.rarity}
                 image_url={item.reward_catalog.image_url}
+                generation={item.reward_catalog.generation ?? undefined}
                 grade={item.grade ?? undefined}
               />
             ))}

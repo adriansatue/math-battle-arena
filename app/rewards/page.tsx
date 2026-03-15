@@ -15,6 +15,7 @@ type InventoryRow = {
     description: string
     rarity:      'common' | 'uncommon' | 'rare' | 'legendary'
     image_url:   string
+    generation?: number | null
   }
 }
 
@@ -28,7 +29,7 @@ export default async function RewardsPage() {
   const [{ data: profile }, { data: inv, error: invError }, { count: totalCards }] = await Promise.all([
     admin
       .from('profiles')
-      .select('total_points')
+      .select('total_points, points_balance')
       .eq('id', user.id)
       .single(),
     admin
@@ -38,7 +39,7 @@ export default async function RewardsPage() {
         obtained_at,
         grade,
         reward_catalog (
-          id, name, description, rarity, image_url
+          id, name, description, rarity, image_url, generation
         )
       `)
       .eq('user_id', user.id)
@@ -54,7 +55,7 @@ export default async function RewardsPage() {
   return (
     <RewardsClient
       initialInventory={(inv as unknown as InventoryRow[]) ?? []}
-      initialPoints={profile?.total_points ?? 0}
+      initialPoints={profile?.points_balance ?? profile?.total_points ?? 0}
       totalCards={totalCards ?? 0}
     />
   )

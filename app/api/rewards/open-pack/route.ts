@@ -85,13 +85,14 @@ export async function POST(request: Request) {
   // Check balance
   const { data: profile } = await adminSupabase
     .from('profiles')
-    .select('total_points')
+    .select('total_points, points_balance')
     .eq('id', user.id)
     .single()
 
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-  if (profile.total_points < config.cost) {
+  const spendable = profile.points_balance ?? profile.total_points
+  if (spendable < config.cost) {
     return NextResponse.json({
       error: `Not enough points! You need ${config.cost.toLocaleString()} pts to open this pack.`
     }, { status: 400 })
@@ -138,10 +139,10 @@ export async function POST(request: Request) {
   // Assign a TAG grade (5–10) to each card
   const grades = picks.map(() => rollGrade())
 
-  // Deduct points
+  // Deduct cost from spendable balance only (total_points stays as lifetime earned)
   await adminSupabase
     .from('profiles')
-    .update({ total_points: profile.total_points - config.cost })
+    .update({ points_balance: (profile.points_balance ?? profile.total_points) - config.cost })
     .eq('id', user.id)
 
   // Add to inventory
@@ -167,6 +168,7 @@ export async function POST(request: Request) {
       description: c.description,
       rarity:      c.rarity,
       image_url:   c.image_url,
+      generation:  c.generation ?? null,
       grade:       grades[i],
     }))
   })

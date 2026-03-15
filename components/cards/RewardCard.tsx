@@ -8,10 +8,23 @@ interface RewardCardProps {
   rarity:        'common' | 'uncommon' | 'rare' | 'legendary'
   image_url:     string
   grade?:        number
+  generation?:   number
   obtained_via?: string
   isNew?:        boolean
   flipped?:      boolean
   onClick?:      () => void
+}
+
+const RARITY_BASE: Record<string, number> = { common: 50, uncommon: 150, rare: 500, legendary: 2000 }
+const GRADE_MULT:  Record<number, number>  = { 10: 2.0, 9: 1.75, 8: 1.5, 7: 1.25, 6: 1.1, 5: 1.0 }
+function cardPoints(rarity: string, grade?: number) {
+  const base = RARITY_BASE[rarity] ?? 50
+  const mult = grade ? (GRADE_MULT[grade] ?? 1.0) : 1.0
+  return Math.round(base * mult)
+}
+
+const GEN_ROMAN: Record<number, string> = {
+  1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI', 7: 'VII', 8: 'VIII', 9: 'IX',
 }
 
 const GRADE_LABEL: Record<number, string> = {
@@ -72,9 +85,10 @@ const rarityConfig = {
 }
 
 export function RewardCard({
-  name, description, rarity, image_url, grade, isNew, flipped, onClick
+  name, description, rarity, image_url, grade, generation, isNew, flipped, onClick
 }: RewardCardProps) {
   const cfg = rarityConfig[rarity] ?? rarityConfig.common
+  const pts = cardPoints(rarity, grade)
 
   if (flipped) {
     return (
@@ -108,9 +122,16 @@ export function RewardCard({
         style={{ background: 'linear-gradient(160deg, #1c1040 0%, #0e0825 100%)' }}
       >
       {/* Rarity strip */}
-      <div className={`bg-gradient-to-r ${cfg.header} px-2.5 py-1 flex items-center gap-1.5`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} flex-shrink-0 shadow-sm`} />
-        <span className="text-white text-xs font-bold tracking-wide uppercase">{cfg.label}</span>
+      <div className={`bg-gradient-to-r ${cfg.header} px-2.5 py-1 flex items-center justify-between`}>
+        <div className="flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} flex-shrink-0 shadow-sm`} />
+          <span className="text-white text-xs font-bold tracking-wide uppercase">{cfg.label}</span>
+        </div>
+        {generation != null && (
+          <span className="bg-black/30 text-white text-[9px] font-black tracking-wider px-1.5 py-0.5 rounded">
+            {GEN_ROMAN[generation]}
+          </span>
+        )}
       </div>
 
       {/* Image area */}
@@ -137,9 +158,13 @@ export function RewardCard({
       <div className={`h-px bg-gradient-to-r ${cfg.header} opacity-40`} />
 
       {/* Card info */}
-      <div className="px-2.5 pt-2 pb-2 text-center">
-        <p className="text-white font-bold text-sm leading-tight truncate">{name}</p>
-        <p className="text-gray-400/80 text-xs mt-0.5 line-clamp-2 leading-snug">{description}</p>
+      <div className="px-2.5 pt-2 pb-1.5">
+        <p className="text-white font-bold text-sm leading-tight truncate text-center">{name}</p>
+        <p className="text-gray-400/80 text-xs mt-0.5 line-clamp-2 leading-snug text-center">{description}</p>
+        <div className="flex items-center justify-center mt-1.5 gap-1">
+          <span className="text-yellow-400 text-[10px]">⚡</span>
+          <span className="text-yellow-300/90 text-[10px] font-bold">{pts.toLocaleString()} pts</span>
+        </div>
       </div>
 
       {/* Grade slab footer */}

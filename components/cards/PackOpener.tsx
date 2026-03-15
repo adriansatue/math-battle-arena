@@ -10,6 +10,7 @@ interface Card {
   description: string
   rarity:      'common' | 'uncommon' | 'rare' | 'legendary'
   image_url:   string
+  generation?: number | null
   grade?:      number
 }
 
@@ -44,6 +45,18 @@ const GRADE_COLOR: Record<number, string> = {
   7:  'from-violet-400 to-purple-500 text-white',
   6:  'from-gray-400 to-gray-500 text-white',
   5:  'from-gray-600 to-gray-700 text-white/80',
+}
+
+const RARITY_BASE: Record<string, number> = { common: 50, uncommon: 150, rare: 500, legendary: 2000 }
+const GRADE_MULT:  Record<number, number>  = { 10: 2.0, 9: 1.75, 8: 1.5, 7: 1.25, 6: 1.1, 5: 1.0 }
+function cardPoints(rarity: string, grade?: number) {
+  const base = RARITY_BASE[rarity] ?? 50
+  const mult = grade ? (GRADE_MULT[grade] ?? 1.0) : 1.0
+  return Math.round(base * mult)
+}
+
+const GEN_ROMAN: Record<number, string> = {
+  1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI', 7: 'VII', 8: 'VIII', 9: 'IX',
 }
 
 // ── Individual flip card ──────────────────────────────────────────────────────
@@ -118,8 +131,13 @@ function FlipCard({
           style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
           className={`absolute inset-0 rounded-2xl border-2 ${cfg.border} bg-gradient-to-b ${cfg.bg} overflow-hidden shadow-2xl shadow-lg ${cfg.glow} ${cfg.ring}`}
         >
-          <div className={`bg-gradient-to-r ${cfg.header} px-2 py-1.5 text-center`}>
+          <div className={`bg-gradient-to-r ${cfg.header} px-2 py-1.5 flex items-center justify-between`}>
             <span className="text-white text-xs font-bold">{cfg.label}</span>
+            {card.generation != null && (
+              <span className="bg-black/30 text-white text-[9px] font-black tracking-wider px-1.5 py-0.5 rounded">
+                {GEN_ROMAN[card.generation]}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center justify-center h-28 p-2 bg-white/5">
@@ -133,9 +151,13 @@ function FlipCard({
             )}
           </div>
 
-          <div className="p-2 text-center">
-            <p className="text-white font-bold text-sm truncate">{card.name}</p>
-            <p className="text-gray-400 text-xs mt-0.5 line-clamp-2">{card.description}</p>
+          <div className="p-2">
+            <p className="text-white font-bold text-sm truncate text-center">{card.name}</p>
+            <p className="text-gray-400 text-xs mt-0.5 line-clamp-2 text-center">{card.description}</p>
+            <div className="flex items-center justify-center mt-1.5 gap-1">
+              <span className="text-yellow-400 text-[10px]">⚡</span>
+              <span className="text-yellow-300/90 text-[10px] font-bold">{cardPoints(card.rarity, card.grade).toLocaleString()} pts</span>
+            </div>
           </div>
 
           {/* Grade badge */}

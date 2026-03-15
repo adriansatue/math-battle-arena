@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getLevelAndRank } from '@/lib/game/scoring'
 
 export async function POST(
   request: Request,
@@ -67,21 +68,27 @@ export async function POST(
   if (winnerId) {
     const { data: winnerProfile } = await adminSupabase
       .from('profiles')
-      .select('total_points, wins, current_streak, best_streak')
+      .select('total_points, points_balance, wins, current_streak, best_streak')
       .eq('id', winnerId)
       .single()
 
     if (winnerProfile) {
-      const newPoints = winnerProfile.total_points + (totals[winnerId] ?? 0) + 200
-      const newStreak = winnerProfile.current_streak + 1
+      const earnedPoints = (totals[winnerId] ?? 0) + 200
+      const newPoints    = winnerProfile.total_points + earnedPoints
+      const newBalance   = (winnerProfile.points_balance ?? winnerProfile.total_points) + earnedPoints
+      const newStreak    = winnerProfile.current_streak + 1
+      const { level, rank_title } = getLevelAndRank(newPoints)
 
       await adminSupabase
         .from('profiles')
         .update({
           total_points:    newPoints,
+          points_balance:  newBalance,
           wins:            winnerProfile.wins + 1,
           current_streak:  newStreak,
           best_streak:     Math.max(winnerProfile.best_streak, newStreak),
+          level,
+          rank_title,
         })
         .eq('id', winnerId)
     }
@@ -91,17 +98,24 @@ export async function POST(
     if (loserId) {
       const { data: loserProfile } = await adminSupabase
         .from('profiles')
-        .select('total_points, losses')
+        .select('total_points, points_balance, losses')
         .eq('id', loserId)
         .single()
 
       if (loserProfile) {
+        const earnedPoints  = totals[loserId] ?? 0
+        const newLoserPoints = loserProfile.total_points + earnedPoints
+        const newLoserBalance = (loserProfile.points_balance ?? loserProfile.total_points) + earnedPoints
+        const { level, rank_title } = getLevelAndRank(newLoserPoints)
         await adminSupabase
           .from('profiles')
           .update({
-            total_points:   loserProfile.total_points + (totals[loserId] ?? 0),
+            total_points:   newLoserPoints,
+            points_balance: newLoserBalance,
             losses:         loserProfile.losses + 1,
             current_streak: 0,
+            level,
+            rank_title,
           })
           .eq('id', loserId)
       }
