@@ -85,6 +85,14 @@ export async function POST(
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
 
+  // Update all questions' server_sent_at to NOW (not when they were created)
+  // This ensures accurate timing for the first player who loads the questions
+  const nowAfterInsert = new Date().toISOString()
+  await adminSupabase
+    .from('battle_questions')
+    .update({ server_sent_at: nowAfterInsert })
+    .eq('battle_id', id)
+
   return NextResponse.json({
     message:   'Battle started!',
     questions: questions.map((q, i) => ({

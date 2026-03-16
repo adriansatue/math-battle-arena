@@ -38,7 +38,8 @@ export function calculatePoints(params: ScoreParams): number {
   const timeRemaining = Math.max(0, timeLimitMs - timeTakenMs)
 
   // Decay formula: max_speed_bonus × (time_remaining / time_total)
-  const speedBonus = Math.round(MAX_SPEED_BONUS * (timeRemaining / timeLimitMs))
+  // Clamp to ensure bonus is never negative (late answers should just get base points)
+  const speedBonus = Math.max(0, Math.round(MAX_SPEED_BONUS * (timeRemaining / timeLimitMs)))
 
   // First answer bonus (realtime mode only)
   const firstBonus = isFirstAnswer ? FIRST_ANSWER_BONUS : 0

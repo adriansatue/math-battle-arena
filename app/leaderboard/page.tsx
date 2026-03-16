@@ -16,6 +16,7 @@ interface Player {
 }
 
 type Bracket = 'all' | 'beginner' | 'rising' | 'champion'
+type TimePeriod = 'alltime' | 'weekly'
 
 const BRACKETS: { key: Bracket; label: string; emoji: string; desc: string; min: number; max: number }[] = [
   { key: 'beginner',  label: 'Beginners',    emoji: '🌱', desc: 'Level 1–2',  min: 1, max: 2 },
@@ -31,10 +32,11 @@ function bracketForLevel(level: number): Bracket {
 }
 
 export default function LeaderboardPage() {
-  const [players,   setPlayers]   = useState<Player[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [currentId, setCurrentId] = useState('')
-  const [bracket,   setBracket]   = useState<Bracket>('all')
+  const [players,      setPlayers]      = useState<Player[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [currentId,    setCurrentId]    = useState('')
+  const [bracket,      setBracket]      = useState<Bracket>('all')
+  const [timePeriod,   setTimePeriod]   = useState<TimePeriod>('alltime')
 
   useEffect(() => {
     async function load() {
@@ -52,19 +54,85 @@ export default function LeaderboardPage() {
         if (profile) setBracket(bracketForLevel(profile.level as number))
       }
 
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, username, total_points, level, rank_title, wins, losses, best_streak')
-        .neq('rank_title', 'AI Challenger')
-        .not('username', 'ilike', '%MathBot%')
-        .order('total_points', { ascending: false })
-        .limit(50)
+      if (timePeriod === 'alltime') {
+        // Fetch all-time leaderboard
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, username, total_points, level, rank_title, wins, losses, best_streak')
+          .neq('rank_title', 'AI Challenger')
+          .not('username', 'ilike', '%MathBot%')
+          .order('total_points', { ascending: false })
+          .limit(50)
 
-      setPlayers((data as Player[]) ?? [])
+        setPlayers((data as Player[]) ?? [])
+      } else {
+        // Fetch weekly leaderboard (last 7 days)
+        const sevenDaysAgo = new Date()
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+        const sevenDaysAgoISO = sevenDaysAgo.toISOString()
+
+        // Get all profiles first
+        const { data: allProfiles } = await supabase
+          .from('profiles')
+          .select('id, username, level, rank_title, wins, losses, best_streak')
+          .neq('rank_title', 'AI Challenger')
+          .not('username', 'ilike', '%MathBot%')
+
+        if (!allProfiles) {
+          setPlayers([])
+          setLoading(false)
+          return
+        }
+
+        // Calculate weekly points for each player
+        const { data: battles } = await supabase
+          .from('battles')
+          .select('id, finished_at')
+          .gte('finished_at', sevenDaysAgoISO)
+
+        const battleIds = battles?.map(b => b.id) ?? []
+
+        if (battleIds.length === 0) {
+          // No battles in the last 7 days
+          setPlayers([])
+          setLoading(false)
+          return
+        }
+
+        const { data: answers } = await supabase
+          .from('battle_answers')
+          .select('player_id, points_earned')
+          .in('battle_id', battleIds)
+
+        // Calculate total points per player for the week
+        const weeklyPoints: Record<string, number> = {}
+        answers?.forEach(answer => {
+          weeklyPoints[answer.player_id] = (weeklyPoints[answer.player_id] ?? 0) + answer.points_earned
+        })
+
+        // Build weekly leaderboard
+        const weeklyPlayers = allProfiles
+          .filter(p => weeklyPoints[p.id] && weeklyPoints[p.id] > 0)
+          .map(p => ({
+            id: p.id,
+            username: p.username,
+            total_points: weeklyPoints[p.id] ?? 0,
+            level: p.level,
+            rank_title: p.rank_title,
+            wins: p.wins,
+            losses: p.losses,
+            best_streak: p.best_streak,
+          }))
+          .sort((a, b) => b.total_points - a.total_points)
+          .slice(0, 50)
+
+        setPlayers(weeklyPlayers as Player[])
+      }
+
       setLoading(false)
     }
     load()
-  }, [])
+  }, [timePeriod])
 
   const rankEmoji = (i: number) =>
     i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`
@@ -93,7 +161,33 @@ export default function LeaderboardPage() {
         {/* Header */}
         <div className="text-center mb-6 pt-4">
           <h1 className="text-4xl font-bold text-white mb-2">🏆 Leaderboard</h1>
-          <p className="text-purple-300">Top Math Battle champions</p>
+          <p className="text-purple-300">
+            {timePeriod === 'alltime' ? 'All-time champions' : 'This week\'s top players'}
+          </p>
+        </div>
+
+        {/* Time Period Toggle */}
+        <div className="flex gap-2 mb-6 justify-center">
+          <button
+            onClick={() => setTimePeriod('alltime')}
+            className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+              timePeriod === 'alltime'
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white'
+                : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            👑 All Time
+          </button>
+          <button
+            onClick={() => setTimePeriod('weekly')}
+            className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+              timePeriod === 'weekly'
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white'
+                : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            🔥 This Week
+          </button>
         </div>
 
         {/* Bracket filter tabs */}
@@ -119,8 +213,14 @@ export default function LeaderboardPage() {
         {filtered.length === 0 && (
           <div className="text-center py-16 text-purple-300">
             <div className="text-5xl mb-4">{activeBracket.emoji}</div>
-            <p className="font-bold text-white text-lg mb-1">No players here yet!</p>
-            <p className="text-sm">Be the first {activeBracket.label} on the board.</p>
+            <p className="font-bold text-white text-lg mb-1">
+              {timePeriod === 'weekly' ? 'No weekly battles yet!' : 'No players here yet!'}
+            </p>
+            <p className="text-sm">
+              {timePeriod === 'weekly' 
+                ? 'Play some battles this week to climb the weekly rankings!' 
+                : `Be the first ${activeBracket.label} on the board.`}
+            </p>
           </div>
         )}
 

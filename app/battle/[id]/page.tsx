@@ -122,9 +122,21 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
 
     // Give the opponent a couple of seconds after we finish; then end regardless
     const delay = opponentFinished ? 1500 : 3000
-    const timeout = setTimeout(() => {
-      fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
-        .then(() => router.push(`/results/${battleId}`))
+    const timeout = setTimeout(async () => {
+      try {
+        // Call finish to finalize the battle and update scores
+        const finishRes = await fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
+        if (finishRes.ok) {
+          // Small delay to ensure DB is updated before redirect
+          await new Promise(resolve => setTimeout(resolve, 100))
+          router.push(`/results/${battleId}`)
+        }
+      } catch (err) {
+        console.error('Finish error:', err)
+        // Redirect anyway after a delay
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        router.push(`/results/${battleId}`)
+      }
     }, delay)
 
     return () => clearTimeout(timeout)
@@ -315,6 +327,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     setStarting(true)
     setStartError(null)
     const res = await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
+    
     if (!res.ok) {
       const d = await res.json()
       setStartError(
@@ -322,7 +335,25 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           ? '⚠️ Waiting for opponent to match your card bet first'
           : (d.message ?? d.error ?? 'Failed to start')
       )
+      setStarting(false)
+      return
     }
+
+    // Success: Update battle status immediately and fetch questions
+    setStatus('active')
+    
+    // Fetch questions immediately
+    const { data: qs } = await supabase
+      .from('battle_questions_safe')
+      .select('*')
+      .eq('battle_id', battleId)
+      .order('sequence')
+    
+    if (qs && qs.length > 0) {
+      setQuestions(qs as Question[])
+      setServerSentAt(new Date().toISOString())
+    }
+    
     setStarting(false)
   }
 

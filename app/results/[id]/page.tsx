@@ -57,6 +57,19 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
       setBattle(b)
       setScores({ [b.host_id]: b.host_score, [b.guest_id]: b.guest_score })
 
+      // If battle is not finished yet, poll every 500ms until it is
+      if (b.status !== 'finished') {
+        const pollInterval = setInterval(async () => {
+          const { data: updated } = await supabase.from('battles').select('*').eq('id', battleId).single()
+          if (updated?.status === 'finished') {
+            setBattle(updated)
+            setScores({ [updated.host_id]: updated.host_score, [updated.guest_id]: updated.guest_score })
+            clearInterval(pollInterval)
+          }
+        }, 500)
+        return () => clearInterval(pollInterval)
+      }
+
       const ids = [b.host_id, b.guest_id].filter(Boolean)
       const { data: profs } = await supabase.from('profiles').select('id, username').in('id', ids)
       const map: Record<string, string> = {}
