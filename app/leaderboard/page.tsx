@@ -71,6 +71,8 @@ export default function LeaderboardPage() {
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
         const sevenDaysAgoISO = sevenDaysAgo.toISOString()
 
+        console.log('[Leaderboard] Weekly fetch - Last 7 days since:', sevenDaysAgoISO)
+
         // Get all profiles first (including total_points for validation)
         const { data: allProfiles } = await supabase
           .from('profiles')
@@ -91,6 +93,7 @@ export default function LeaderboardPage() {
           .gte('finished_at', sevenDaysAgoISO)
 
         const battleIds = battles?.map(b => b.id) ?? []
+        console.log('[Leaderboard] Battles in last 7 days:', battleIds.length)
 
         if (battleIds.length === 0) {
           // No battles in the last 7 days
@@ -104,11 +107,15 @@ export default function LeaderboardPage() {
           .select('player_id, points_earned')
           .in('battle_id', battleIds)
 
+        console.log('[Leaderboard] Total answers:', answers?.length)
+
         // Calculate total points per player for the week
         const weeklyPoints: Record<string, number> = {}
         answers?.forEach(answer => {
           weeklyPoints[answer.player_id] = (weeklyPoints[answer.player_id] ?? 0) + answer.points_earned
         })
+
+        console.log('[Leaderboard] Points from answers:', weeklyPoints)
 
         // Add 200 point winner bonus for each battle won this week
         battles?.forEach(battle => {
@@ -116,6 +123,19 @@ export default function LeaderboardPage() {
             weeklyPoints[battle.winner_id] = (weeklyPoints[battle.winner_id] ?? 0) + 200
           }
         })
+
+        console.log('[Leaderboard] Points after winner bonuses:', weeklyPoints)
+
+        // Find user dasafa if exists for debugging
+        const dasafaProfile = allProfiles.find(p => p.username === 'dasafa')
+        if (dasafaProfile) {
+          console.log('[Leaderboard] DASAFA DEBUG:', {
+            id: dasafaProfile.id,
+            username: dasafaProfile.username,
+            allTimePoints: dasafaProfile.total_points,
+            weeklyCalculated: weeklyPoints[dasafaProfile.id] ?? 0,
+          })
+        }
 
         // Build weekly leaderboard
         const weeklyPlayers = allProfiles
