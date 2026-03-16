@@ -87,7 +87,7 @@ export default function LeaderboardPage() {
         // Calculate weekly points for each player
         const { data: battles } = await supabase
           .from('battles')
-          .select('id, finished_at')
+          .select('id, finished_at, winner_id')
           .gte('finished_at', sevenDaysAgoISO)
 
         const battleIds = battles?.map(b => b.id) ?? []
@@ -108,6 +108,13 @@ export default function LeaderboardPage() {
         const weeklyPoints: Record<string, number> = {}
         answers?.forEach(answer => {
           weeklyPoints[answer.player_id] = (weeklyPoints[answer.player_id] ?? 0) + answer.points_earned
+        })
+
+        // Add 200 point winner bonus for each battle won this week
+        battles?.forEach(battle => {
+          if (battle.winner_id) {
+            weeklyPoints[battle.winner_id] = (weeklyPoints[battle.winner_id] ?? 0) + 200
+          }
         })
 
         // Build weekly leaderboard

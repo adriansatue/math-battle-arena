@@ -22,7 +22,15 @@ export async function POST(
     .single()
 
   if (!battle) return NextResponse.json({ error: 'Battle not found' }, { status: 404 })
-  if (battle.status === 'finished') return NextResponse.json({ message: 'Already finished' })
+  if (battle.status === 'finished') {
+    // Battle already finished — return current scores without updating again
+    return NextResponse.json({
+      message: 'Battle already finished',
+      winner_id:   battle.winner_id,
+      host_score:  battle.host_score,
+      guest_score: battle.guest_score,
+    })
+  }
 
   // Tally scores from answers
   const { data: answers } = await adminSupabase
