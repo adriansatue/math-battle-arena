@@ -71,10 +71,10 @@ export default function LeaderboardPage() {
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
         const sevenDaysAgoISO = sevenDaysAgo.toISOString()
 
-        // Get all profiles first
+        // Get all profiles first (including total_points for validation)
         const { data: allProfiles } = await supabase
           .from('profiles')
-          .select('id, username, level, rank_title, wins, losses, best_streak')
+          .select('id, username, level, rank_title, wins, losses, best_streak, total_points')
           .neq('rank_title', 'AI Challenger')
           .not('username', 'ilike', '%MathBot%')
 

@@ -87,7 +87,7 @@ export async function POST(
       const newStreak    = winnerProfile.current_streak + 1
       const { level, rank_title } = getLevelAndRank(newPoints)
 
-      await adminSupabase
+      const { error: winnerError } = await adminSupabase
         .from('profiles')
         .update({
           total_points:    newPoints,
@@ -99,6 +99,11 @@ export async function POST(
           rank_title,
         })
         .eq('id', winnerId)
+
+      if (winnerError) {
+        console.error('[finish] winner profile update error:', winnerError)
+        return NextResponse.json({ error: `Failed to update winner profile: ${winnerError.message}` }, { status: 500 })
+      }
     }
 
     // Update loser profile — add points + increment losses + reset streak
@@ -115,7 +120,8 @@ export async function POST(
         const newLoserPoints = loserProfile.total_points + earnedPoints
         const newLoserBalance = (loserProfile.points_balance ?? loserProfile.total_points) + earnedPoints
         const { level, rank_title } = getLevelAndRank(newLoserPoints)
-        await adminSupabase
+        
+        const { error: loserError } = await adminSupabase
           .from('profiles')
           .update({
             total_points:   newLoserPoints,
@@ -126,6 +132,11 @@ export async function POST(
             rank_title,
           })
           .eq('id', loserId)
+
+        if (loserError) {
+          console.error('[finish] loser profile update error:', loserError)
+          return NextResponse.json({ error: `Failed to update loser profile: ${loserError.message}` }, { status: 500 })
+        }
       }
     }
   }
