@@ -85,7 +85,7 @@ function FlipCard({
   return (
     <div
       className="relative select-none"
-      style={{ width: 160, height: card.grade !== undefined ? 252 : 224, perspective: '1000px' }}
+      style={{ width: 160, height: card.grade !== undefined ? 260 : 224, perspective: '1000px' }}
       onClick={() => { if (!flipped) onReveal() }}
     >
       {/* Flash overlay */}
@@ -129,9 +129,9 @@ function FlipCard({
         {/* ── FRONT face ── */}
         <div
           style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
-          className={`absolute inset-0 rounded-2xl border-2 ${cfg.border} bg-gradient-to-b ${cfg.bg} overflow-hidden shadow-2xl shadow-lg ${cfg.glow} ${cfg.ring}`}
+          className={`absolute inset-0 rounded-2xl border-2 ${cfg.border} bg-gradient-to-b ${cfg.bg} shadow-2xl shadow-lg ${cfg.glow} ${cfg.ring} flex flex-col`}
         >
-          <div className={`bg-gradient-to-r ${cfg.header} px-2 py-1.5 flex items-center justify-between`}>
+          <div className={`bg-gradient-to-r ${cfg.header} px-2 py-1.5 flex items-center justify-between flex-shrink-0`}>
             <span className="text-white text-xs font-bold">{cfg.label}</span>
             {card.generation != null && (
               <span className="bg-black/30 text-white text-[9px] font-black tracking-wider px-1.5 py-0.5 rounded">
@@ -140,7 +140,7 @@ function FlipCard({
             )}
           </div>
 
-          <div className="flex items-center justify-center h-28 p-2 bg-white/5">
+          <div className="flex items-center justify-center flex-1 p-2 bg-white/5 overflow-hidden">
             {card.image_url ? (
               <Image src={card.image_url} alt={card.name} width={112} height={112}
                 className="max-h-full max-w-full object-contain drop-shadow-lg"
@@ -151,7 +151,7 @@ function FlipCard({
             )}
           </div>
 
-          <div className="p-2">
+          <div className="px-2 py-1.5 flex-shrink-0">
             <p className="text-white font-bold text-sm truncate text-center">{card.name}</p>
             <p className="text-gray-400 text-xs mt-0.5 line-clamp-2 text-center">{card.description}</p>
             <div className="flex items-center justify-center mt-1.5 gap-1">
@@ -162,14 +162,14 @@ function FlipCard({
 
           {/* Grade badge */}
           {card.grade != null && (
-            <div className={`mx-2 mb-1.5 rounded-lg px-2 py-1 flex items-center justify-between bg-gradient-to-r ${GRADE_COLOR[card.grade] ?? GRADE_COLOR[5]}`}>
+            <div className={`mx-2 mb-2 rounded-lg px-2 py-1.5 flex items-center justify-between bg-gradient-to-r ${GRADE_COLOR[card.grade] ?? GRADE_COLOR[5]} flex-shrink-0`}>
               <span className="text-[10px] font-black">Grade {card.grade}</span>
               <span className="text-[10px] font-semibold opacity-90 truncate ml-1">{GRADE_LABEL[card.grade]}</span>
             </div>
           )}
 
           {card.rarity === 'legendary' && (
-            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-yellow-300/10 to-transparent animate-pulse pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-yellow-300/10 to-transparent animate-pulse pointer-events-none rounded-2xl" />
           )}
         </div>
       </div>
