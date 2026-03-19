@@ -300,7 +300,18 @@ export default function LeaderboardPage() {
 
             {/* 3rd place */}
             <div className="bg-white/10 rounded-2xl p-4 text-center border border-white/20 mt-6">
-              <div className="text-3xl mb-2">🥉</div>
+              <div className="mb-2 flex justify-center">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Bronze medal circle */}
+                  <circle cx="24" cy="28" r="18" fill="#CD7F32" />
+                  <circle cx="24" cy="28" r="15" fill="#E8A060" />
+                  {/* Ribbon top */}
+                  <polygon points="18,4 24,12 30,4" fill="#C0392B" />
+                  <rect x="19" y="4" width="10" height="8" rx="1" fill="#E74C3C" />
+                  {/* Number 3 */}
+                  <text x="24" y="34" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#7B4A10" fontFamily="Arial, sans-serif">3</text>
+                </svg>
+              </div>
               <p className="text-white font-bold text-sm truncate">{filtered[2].username}</p>
               <p className={`text-xs font-semibold ${levelColor(filtered[2].level)}`}>
                 Lv.{filtered[2].level}
