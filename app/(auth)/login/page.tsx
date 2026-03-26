@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { login, sendMagicLink, signInWithGoogle } from '@/lib/supabase/actions'
@@ -8,7 +8,7 @@ import { DemoButton } from '@/components/DemoButton'
 
 type Mode = 'password' | 'magic'
 
-export default function LoginPage() {
+function LoginForm() {
   const [mode, setMode]       = useState<Mode>('password')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
@@ -156,5 +156,13 @@ export default function LoginPage() {
         label="👀 Try as Guest — no sign-up needed"
       />
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   )
 }
