@@ -22,6 +22,11 @@ export async function POST(
   const body = await request.json()
   const { question_id, answer_given, time_taken_ms, multiplier } = body
 
+  // Validate answer_given — must be a finite number
+  if (typeof answer_given !== 'number' || !isFinite(answer_given) || isNaN(answer_given)) {
+    return NextResponse.json({ error: 'Invalid answer format' }, { status: 400 })
+  }
+
   // Fetch question with correct_answer (server only)
   const { data: question, error: qError } = await supabase
     .from('battle_questions')
@@ -147,7 +152,12 @@ export async function POST(
   // is null, so the client cannot inflate points in real PvP games.
   const isPractice = !battle.guest_id
   const safeMultiplier =
-    isPractice && typeof multiplier === 'number' && multiplier > 0 && multiplier <= 1
+    isPractice &&
+    typeof multiplier === 'number' &&
+    isFinite(multiplier) &&
+    !isNaN(multiplier) &&
+    multiplier > 0 &&
+    multiplier <= 1
       ? multiplier
       : 1.0
   const pointsEarned = Math.round(rawPoints * safeMultiplier)

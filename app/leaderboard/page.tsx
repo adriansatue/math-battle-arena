@@ -64,8 +64,6 @@ export default function LeaderboardPage() {
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
         const sevenDaysAgoISO = sevenDaysAgo.toISOString()
 
-        console.log('[Leaderboard] Weekly fetch - Last 7 days since:', sevenDaysAgoISO)
-
         // Get all profiles first (including total_points for validation)
         const { data: allProfiles } = await supabase
           .from('profiles')
@@ -87,7 +85,6 @@ export default function LeaderboardPage() {
           .gte('finished_at', sevenDaysAgoISO)
 
         const battleIds = battles?.map(b => b.id) ?? []
-        console.log('[Leaderboard] Battles in last 7 days:', battleIds.length)
 
         if (battleIds.length === 0) {
           // No battles in the last 7 days
@@ -101,15 +98,11 @@ export default function LeaderboardPage() {
           .select('player_id, points_earned')
           .in('battle_id', battleIds)
 
-        console.log('[Leaderboard] Total answers:', answers?.length)
-
         // Calculate total points per player for the week
         const weeklyPoints: Record<string, number> = {}
         answers?.forEach(answer => {
           weeklyPoints[answer.player_id] = (weeklyPoints[answer.player_id] ?? 0) + answer.points_earned
         })
-
-        console.log('[Leaderboard] Points from answers:', weeklyPoints)
 
         // Add 200 point winner bonus for each battle won this week
         battles?.forEach(battle => {
@@ -117,39 +110,6 @@ export default function LeaderboardPage() {
             weeklyPoints[battle.winner_id] = (weeklyPoints[battle.winner_id] ?? 0) + 200
           }
         })
-
-        console.log('[Leaderboard] Points after winner bonuses:', weeklyPoints)
-
-        // Find user dasafa if exists for debugging
-        const dasafaProfile = allProfiles.find(p => p.username === 'dasafa')
-        if (dasafaProfile) {
-          console.log('[Leaderboard] DASAFA DEBUG:', {
-            id: dasafaProfile.id,
-            username: dasafaProfile.username,
-            allTimePoints: dasafaProfile.total_points,
-            weeklyCalculated: weeklyPoints[dasafaProfile.id] ?? 0,
-          })
-        }
-
-        // Find Adrian for debugging
-        const adrianProfile = allProfiles.find(p => p.username === 'Adrian')
-        if (adrianProfile) {
-          // Get all battles for Adrian this week
-          const adrianBattles = battles?.filter(b => b.winner_id === adrianProfile.id)
-          const adrianAnswers = answers?.filter(a => a.player_id === adrianProfile.id)
-          console.log('[Leaderboard] ADRIAN DEBUG:', {
-            id: adrianProfile.id,
-            username: adrianProfile.username,
-            allTimePoints: adrianProfile.total_points,
-            weeklyCalculated: weeklyPoints[adrianProfile.id] ?? 0,
-            battlesWonThisWeek: adrianBattles?.length ?? 0,
-            answerCount: adrianAnswers?.length ?? 0,
-            answerPoints: adrianAnswers?.reduce((sum, a) => sum + a.points_earned, 0) ?? 0,
-            winnerBonuses: (adrianBattles?.length ?? 0) * 200,
-            expectedTotal: (adrianAnswers?.reduce((sum, a) => sum + a.points_earned, 0) ?? 0) + ((adrianBattles?.length ?? 0) * 200),
-            allBattles: battles?.slice(0, 10).map(b => ({ id: b.id, winner: b.winner_id, finished: b.finished_at })),
-          })
-        }
 
         // Build weekly leaderboard
         const weeklyPlayers = allProfiles

@@ -26,6 +26,9 @@ export async function POST(request: Request) {
   if (!['easy', 'medium', 'hard'].includes(difficulty)) {
     return NextResponse.json({ error: 'Invalid difficulty' }, { status: 400 })
   }
+  if (!Number.isFinite(question_count) || question_count < 1 || question_count > 50) {
+    return NextResponse.json({ error: 'question_count must be between 1 and 50' }, { status: 400 })
+  }
 
   const { data: battle, error } = await supabase
     .from('battles')

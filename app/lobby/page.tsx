@@ -44,6 +44,15 @@ export default function LobbyPage() {
     }
   }, [])
 
+  // Remove user from matchmaking queue if tab is closed mid-queue
+  useEffect(() => {
+    const handleUnload = () => {
+      navigator.sendBeacon('/api/matchmaking/queue')
+    }
+    window.addEventListener('beforeunload', handleUnload)
+    return () => window.removeEventListener('beforeunload', handleUnload)
+  }, [])
+
   // ── CREATE BATTLE ─────────────────────────────────
   async function createBattle() {
     setCreating(true)
@@ -165,7 +174,11 @@ export default function LobbyPage() {
     if (pollInterval.current)  clearInterval(pollInterval.current)
     setInQueue(false)
     setQueueTime(0)
-    await fetch('/api/matchmaking/queue', { method: 'DELETE' })
+    try {
+      await fetch('/api/matchmaking/queue', { method: 'DELETE' })
+    } catch {
+      // Best-effort cleanup — ignore errors
+    }
   }
 
   const formatTime = (s: number) =>

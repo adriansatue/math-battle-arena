@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useEffect, useRef, useState, useCallback } from 'react'
+import { Suspense, use, useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Timer }        from '@/components/battle/Timer'
@@ -41,6 +41,14 @@ interface Summary {
 }
 
 export default function PracticeSessionPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense>
+      <PracticeSessionContent params={params} />
+    </Suspense>
+  )
+}
+
+function PracticeSessionContent({ params }: { params: Promise<{ id: string }> }) {
   const { id: battleId } = use(params)
   const router      = useRouter()
   const supabase    = createClient()
