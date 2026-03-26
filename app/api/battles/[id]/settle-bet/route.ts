@@ -19,6 +19,15 @@ export async function POST(
   if (!battle) return NextResponse.json({ error: 'Battle not found' }, { status: 404 })
   if (battle.bet_status !== 'matched') return NextResponse.json({ message: 'No active bet' })
 
+  // Validate winner_id is actually a participant in this battle
+  if (winner_id !== battle.host_id && winner_id !== battle.guest_id) {
+    return NextResponse.json({ error: 'Invalid winner' }, { status: 400 })
+  }
+
+  if (!battle.guest_id) {
+    return NextResponse.json({ error: 'No opponent in this battle' }, { status: 400 })
+  }
+
   const loser_id = winner_id === battle.host_id ? battle.guest_id : battle.host_id
 
   const winnerStakedId = winner_id === battle.host_id

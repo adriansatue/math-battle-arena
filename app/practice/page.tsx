@@ -50,13 +50,13 @@ const CATEGORIES = [
 const DIFFICULTIES = [
   {
     id: 'easy', label: 'Easy', emoji: '🐢',
-    desc: '15 seconds', sub: 'Perfect for warming up',
+    desc: '25 seconds', sub: 'Perfect for warming up',
     color: 'from-green-500 to-emerald-600',
     bg: 'bg-green-500/10', border: 'border-green-500/30',
   },
   {
     id: 'medium', label: 'Medium', emoji: '🐇',
-    desc: '10 seconds', sub: 'A solid challenge',
+    desc: '15 seconds', sub: 'A solid challenge',
     color: 'from-amber-500 to-orange-500',
     bg: 'bg-amber-500/10', border: 'border-amber-500/30',
   },

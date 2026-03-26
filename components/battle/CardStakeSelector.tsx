@@ -57,7 +57,7 @@ export function CardStakeSelector({
       setInventory((data as unknown as InventoryItem[]) ?? [])
     }
     load()
-  }, [supabase])
+  }, [supabase, battleId, isHost])
 
   async function stakeCard() {
     if (!selected) return

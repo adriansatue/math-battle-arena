@@ -57,13 +57,18 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
       setBattle(b)
       setScores({ [b.host_id]: b.host_score, [b.guest_id]: b.guest_score })
 
-      // If battle is not finished yet, poll every 500ms until it is
+      // If battle is not finished yet, poll every 500ms until it is (max 30s)
       if (b.status !== 'finished') {
+        let elapsed = 0
         const pollInterval = setInterval(async () => {
+          elapsed += 500
           const { data: updated } = await supabase.from('battles').select('*').eq('id', battleId).single()
           if (updated?.status === 'finished') {
             setBattle(updated)
             setScores({ [updated.host_id]: updated.host_score, [updated.guest_id]: updated.guest_score })
+            clearInterval(pollInterval)
+          } else if (elapsed >= 30_000) {
+            // Give up waiting — show whatever we have
             clearInterval(pollInterval)
           }
         }, 500)

@@ -20,7 +20,7 @@ export async function POST(
   }
 
   const body = await request.json()
-  const { question_id, answer_given, time_taken_ms } = body
+  const { question_id, answer_given, time_taken_ms, multiplier } = body
 
   // Fetch question with correct_answer (server only)
   const { data: question, error: qError } = await supabase
@@ -134,7 +134,7 @@ export async function POST(
   // If overtime but still correct, award base points only (no speed/streak/first bonus).
   // This prevents the confusing "+0 pts" on a correct answer caused by borderline timing.
   const baseOnlyPoints = isCorrect ? Math.round(BASE_POINTS * DIFFICULTY_MULTIPLIER[battle.difficulty as Difficulty]) : 0
-  const pointsEarned = isOverTime ? baseOnlyPoints : calculatePoints({
+  const rawPoints = isOverTime ? baseOnlyPoints : calculatePoints({
     difficulty:    battle.difficulty as Difficulty,
     isCorrect,
     timeTakenMs:   serverValidatedMs,
@@ -142,6 +142,15 @@ export async function POST(
     isFirstAnswer,
     currentStreak,
   })
+
+  // Apply optional multiplier — only honoured for solo (practice) battles where guest_id
+  // is null, so the client cannot inflate points in real PvP games.
+  const isPractice = !battle.guest_id
+  const safeMultiplier =
+    isPractice && typeof multiplier === 'number' && multiplier > 0 && multiplier <= 1
+      ? multiplier
+      : 1.0
+  const pointsEarned = Math.round(rawPoints * safeMultiplier)
 
   // Flag suspicious timing
   const flagged = isFlagged(time_taken_ms, serverValidatedMs, battle.time_per_q_secs)

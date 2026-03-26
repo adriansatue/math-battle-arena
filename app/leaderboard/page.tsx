@@ -45,13 +45,6 @@ export default function LeaderboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setCurrentId(user.id)
-        // Auto-select the current player's own bracket
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('level')
-          .eq('id', user.id)
-          .single()
-        if (profile) setBracket(bracketForLevel(profile.level as number))
       }
 
       if (timePeriod === 'alltime') {
@@ -90,6 +83,7 @@ export default function LeaderboardPage() {
         const { data: battles } = await supabase
           .from('battles')
           .select('id, finished_at, winner_id')
+          .eq('status', 'finished')
           .gte('finished_at', sevenDaysAgoISO)
 
         const battleIds = battles?.map(b => b.id) ?? []

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Image from 'next/image'
 
 interface RewardCardProps {
@@ -89,6 +90,7 @@ export function RewardCard({
 }: RewardCardProps) {
   const cfg = rarityConfig[rarity] ?? rarityConfig.common
   const pts = cardPoints(rarity, grade)
+  const [imgError, setImgError] = useState(false)
 
   if (flipped) {
     return (
@@ -140,14 +142,14 @@ export function RewardCard({
         <div className={`absolute inset-0 flex items-center justify-center pointer-events-none`}>
           <div className={`w-20 h-20 rounded-full ${cfg.glowBg} opacity-10 blur-2xl`} />
         </div>
-        {image_url ? (
+        {image_url && !imgError ? (
           <Image
             src={image_url}
             alt={name}
             width={108}
             height={108}
             className="relative z-10 max-h-full max-w-full object-contain drop-shadow-xl"
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+            onError={() => setImgError(true)}
           />
         ) : (
           <div className="text-4xl">🃏</div>

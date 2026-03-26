@@ -65,6 +65,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
   const [mcOptions,    setMcOptions]    = useState<number[]>([])
   const [mcSelected,   setMcSelected]   = useState<number | null>(null)
   const [profilePoints, setProfilePoints] = useState<number | null>(null)
+  const [packBalance,   setPackBalance]   = useState<number | null>(null)
   const [opening,       setOpening]       = useState(false)
   const [packCards,     setPackCards]     = useState<PackCard[]>([])
   const [showPack,      setShowPack]      = useState(false)
@@ -140,10 +141,13 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
       if (user) {
         const { data: profile } = await sb
           .from('profiles')
-          .select('total_points')
+          .select('total_points, points_balance')
           .eq('id', user.id)
           .single()
-        if (profile) setProfilePoints(profile.total_points)
+        if (profile) {
+          setProfilePoints(profile.total_points)
+          setPackBalance(profile.points_balance)
+        }
       }
     }, 800)
   }, [battleId])
@@ -164,29 +168,28 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
-        question_id:  questions[currentQ].id,
-        answer_given: answer,
+        question_id:   questions[currentQ].id,
+        answer_given:  answer,
         time_taken_ms: timeTakenMs,
+        multiplier:    POINTS_MULTIPLIER,   // server applies this for solo practice battles only
       }),
     })
     const data = await res.json()
 
     const result: Result = {
       correct:       data.is_correct ?? false,
-      points:        data.points_earned ?? 0,
+      points:        data.points_earned ?? 0,  // server already applied multiplier
       correctAnswer: data.correct_answer,
       answerGiven:   answer,
     }
 
-    const adjustedPoints = result.correct
-      ? Math.round(result.points * POINTS_MULTIPLIER)
-      : 0
-    const adjustedResult: Result = { ...result, points: adjustedPoints }
+    // No client-side scaling needed — server already applied POINTS_MULTIPLIER
+    const adjustedResult: Result = result
 
     setLastResult(adjustedResult)
 
     if (adjustedResult.correct) {
-      setScore(prev => prev + adjustedPoints)
+      setScore(prev => prev + adjustedResult.points)
       setStreak(prev => prev + 1)
       setResults(prev => [...prev, adjustedResult])
     } else {
@@ -251,7 +254,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
     if (!res.ok) { setPackError(data.error); setOpening(false); return }
     const costs = { basic: 500, rare: 2000, legendary: 5000 }
     setPackCards(data.cards)
-    setProfilePoints(prev => prev !== null ? prev - costs[packType] : null)
+    setPackBalance(prev => prev !== null ? prev - costs[packType] : null)
     setShowPack(true)
     setOpening(false)
   }
@@ -335,13 +338,23 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
 
           {/* Pack affordability */}
           <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 mb-6">
-            <p className="text-white/40 text-xs uppercase tracking-widest font-bold mb-3">Packs you can open</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-white/40 text-xs uppercase tracking-widest font-bold">Packs you can open</p>
+              <div className="flex items-center gap-1.5 bg-yellow-400/10 border border-yellow-400/20 rounded-lg px-2.5 py-1">
+                <span className="text-yellow-400 text-xs">💰</span>
+                {packBalance !== null ? (
+                  <span className="text-yellow-300 font-black text-sm">{packBalance.toLocaleString()} <span className="text-yellow-400/60 font-bold text-xs">pts</span></span>
+                ) : (
+                  <span className="text-yellow-400/40 text-sm animate-pulse">...</span>
+                )}
+              </div>
+            </div>
             {packError && (
               <p className="text-red-400 text-xs mb-3 text-center">{packError}</p>
             )}
             <div className="grid grid-cols-3 gap-2">
               {PACKS.map(pack => {
-                const canAfford  = profilePoints !== null ? Math.floor(profilePoints / pack.cost) : null
+                const canAfford  = packBalance !== null ? Math.floor(packBalance / pack.cost) : null
                 const affordable = canAfford !== null && canAfford > 0
                 return (
                   <div key={pack.id} className={`rounded-xl p-3 text-center border transition-all ${
@@ -354,7 +367,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
                     <p className={`text-xs mb-2 ${affordable ? 'text-white/50' : 'text-white/20'}`}>{pack.cost.toLocaleString()} pts</p>
                     <button
                       onClick={() => affordable && !opening && openPack(pack.id as 'basic' | 'rare' | 'legendary')}
-                      disabled={!affordable || opening || profilePoints === null}
+                      disabled={!affordable || opening || packBalance === null}
                       className={`w-full rounded-lg py-1.5 text-xs font-black transition-all ${
                         affordable && !opening
                           ? 'bg-white/25 hover:bg-white/40 text-white active:scale-95 cursor-pointer'

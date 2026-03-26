@@ -29,7 +29,8 @@ export default function NavBar() {
   }, [supabase])
 
   // Hide nav on auth pages, battle screen and practice session
-  const hidden = ['/login', '/signup', '/battle', '/practice/'].some(p => pathname.startsWith(p))
+  const hidden = ['/login', '/signup', '/battle/', '/practice/'].some(p => pathname.startsWith(p))
+    || pathname === '/battle'
   if (hidden) return null
 
   const links = [

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { login, sendMagicLink } from '@/lib/supabase/actions'
 import { DemoButton } from '@/components/DemoButton'
 
@@ -11,6 +12,8 @@ export default function LoginPage() {
   const [mode, setMode]       = useState<Mode>('password')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
+  const searchParams = useSearchParams()
+  const next = searchParams.get('next') ?? '/lobby'
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -18,6 +21,7 @@ export default function LoginPage() {
     setMessage(null)
 
     const formData = new FormData(e.currentTarget)
+    formData.set('next', next)
     const result   = mode === 'password' ? await login(formData) : await sendMagicLink(formData)
 
     if (result?.error) {

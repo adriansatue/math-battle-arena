@@ -157,8 +157,8 @@ export function generateQuestions(
 
 // ── TIME LIMITS PER DIFFICULTY ─────────────────
 export const timeLimits: Record<Difficulty, number> = {
-  easy:   15,
-  medium: 10,
+  easy:   25,
+  medium: 15,
   hard:   6,
 }
 

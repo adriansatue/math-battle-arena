@@ -25,7 +25,10 @@ export function Timer({ durationSecs, serverSentAt, onExpire, paused }: TimerPro
     if (paused) return
 
     const interval = setInterval(() => {
-      if (!serverSentAt) return
+      if (!serverSentAt) {
+        setRemaining(durationSecs)
+        return
+      }
 
       const elapsed = (Date.now() - new Date(serverSentAt).getTime()) / 1000
       const left    = Math.max(0, durationSecs - elapsed)

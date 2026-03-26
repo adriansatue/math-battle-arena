@@ -12,6 +12,11 @@ export async function signUp(formData: FormData) {
   const password = formData.get('password') as string
   const username = formData.get('username') as string
 
+  // Validate username format server-side (mirrors client HTML pattern)
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    return { error: 'Username must be 3–20 characters and contain only letters, numbers, or underscores.' }
+  }
+
   // Check username is not taken
   const { data: existing } = await supabase
     .from('profiles')
@@ -34,6 +39,13 @@ export async function signUp(formData: FormData) {
 
   if (error) return { error: error.message }
 
+  // Guard against race condition: another signup could have claimed the username
+  // between our check above and the profile insert triggered by Supabase's Auth hook.
+  // Supabase will surface a unique-constraint violation as error code '23505'.
+  if (!data.session && !data.user) {
+    return { error: 'Signup failed. The username or email may already be in use.' }
+  }
+
   // Email confirmation is disabled in Supabase — session is returned immediately.
   // Redirect the user straight to the lobby instead of asking them to check email.
   if (data.session) {
@@ -51,13 +63,17 @@ export async function login(formData: FormData) {
 
   const email    = formData.get('email') as string
   const password = formData.get('password') as string
+  const next     = (formData.get('next') as string | null) ?? '/lobby'
+
+  // Sanitise the redirect target — only allow relative paths within the app
+  const safePath = next.startsWith('/') && !next.startsWith('//') ? next : '/lobby'
 
   const { error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) return { error: 'Invalid email or password. Please try again.' }
 
   revalidatePath('/', 'layout')
-  redirect('/lobby')
+  redirect(safePath)
 }
 
 // ── MAGIC LINK ────────────────────────────────

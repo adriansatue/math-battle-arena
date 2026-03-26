@@ -157,6 +157,11 @@ export async function POST(request: Request) {
     })))
 
   if (insertError) {
+    // Roll back the points deduction so the user isn't charged for a failed pack
+    await adminSupabase
+      .from('profiles')
+      .update({ points_balance: profile.points_balance ?? profile.total_points })
+      .eq('id', user.id)
     console.error('[open-pack] insert error:', insertError)
     return NextResponse.json({ error: 'Failed to save cards: ' + insertError.message }, { status: 500 })
   }

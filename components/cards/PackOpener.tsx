@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { SwordLogo } from '@/components/SwordLogo'
 
@@ -213,9 +213,19 @@ export function PackOpener({ cards, onClose }: PackOpenerProps) {
     setRevealed(prev => prev.map((v, idx) => idx === i ? true : v))
   }
 
+  const revealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
   function revealAll() {
-    cards.forEach((_, i) => setTimeout(() => revealCard(i), i * 175))
+    cards.forEach((_, i) => {
+      const t = setTimeout(() => revealCard(i), i * 175)
+      revealTimersRef.current.push(t)
+    })
   }
+
+  // Clear staggered timers if component unmounts mid-reveal
+  useEffect(() => {
+    return () => { revealTimersRef.current.forEach(clearTimeout) }
+  }, [])
 
   const overlayBg = {
     legendary: 'from-yellow-950/90 via-gray-950/90 to-orange-950/90',
