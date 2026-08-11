@@ -4,6 +4,39 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { timeLimits, generateTargetedQuestions } from '@/lib/game/questions'
 import type { Difficulty, Category, PracticeOptions } from '@/lib/game/questions'
 
+const CATEGORIES: Category[] = ['addition', 'subtraction', 'multiplication', 'division', 'fractions', 'order_of_ops']
+const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard']
+
+function isValidNumberOption(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 1000
+}
+
+function sanitizeOptions(options: unknown): PracticeOptions {
+  if (!options || typeof options !== 'object') return {}
+  const input = options as Record<string, unknown>
+  const sanitized: PracticeOptions = {}
+
+  const timesTable = input.timesTable
+  if (Array.isArray(timesTable)) {
+    sanitized.timesTable = timesTable.filter(isValidNumberOption).filter(n => n <= 12)
+  } else if (isValidNumberOption(timesTable) && timesTable <= 12) {
+    sanitized.timesTable = timesTable
+  }
+
+  const divisor = input.divisor
+  if (Array.isArray(divisor)) {
+    sanitized.divisor = divisor.filter(isValidNumberOption).filter(n => n <= 12)
+  } else if (isValidNumberOption(divisor) && divisor <= 12) {
+    sanitized.divisor = divisor
+  }
+
+  if (isValidNumberOption(input.maxNumber)) {
+    sanitized.maxNumber = Math.max(10, Math.min(input.maxNumber, 1000))
+  }
+
+  return sanitized
+}
+
 export async function POST(request: Request) {
   const supabase      = await createClient()
   const adminSupabase = createAdminClient()
@@ -18,11 +51,25 @@ export async function POST(request: Request) {
     options = {}
   } = await request.json()
 
+  if (!CATEGORIES.includes(category)) {
+    return NextResponse.json({ error: 'Invalid category' }, { status: 400 })
+  }
+
+  if (!DIFFICULTIES.includes(difficulty)) {
+    return NextResponse.json({ error: 'Invalid difficulty' }, { status: 400 })
+  }
+
+  if (!Number.isInteger(question_count) || question_count < 1 || question_count > 30) {
+    return NextResponse.json({ error: 'question_count must be between 1 and 30' }, { status: 400 })
+  }
+
+  const safeOptions = sanitizeOptions(options)
+
   const questions = generateTargetedQuestions(
-    category  as Category,
-    difficulty as Difficulty,
+    category,
+    difficulty,
     question_count,
-    options   as PracticeOptions
+    safeOptions
   )
 
   const now = new Date().toISOString()

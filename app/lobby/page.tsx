@@ -47,7 +47,7 @@ export default function LobbyPage() {
   // Remove user from matchmaking queue if tab is closed mid-queue
   useEffect(() => {
     const handleUnload = () => {
-      navigator.sendBeacon('/api/matchmaking/queue')
+      void fetch('/api/matchmaking/queue', { method: 'DELETE', keepalive: true })
     }
     window.addEventListener('beforeunload', handleUnload)
     return () => window.removeEventListener('beforeunload', handleUnload)

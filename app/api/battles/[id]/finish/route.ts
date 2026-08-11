@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getLevelAndRank } from '@/lib/game/scoring'
 
 export async function POST(
   request: Request,
@@ -22,6 +21,12 @@ export async function POST(
     .single()
 
   if (!battle) return NextResponse.json({ error: 'Battle not found' }, { status: 404 })
+
+  const isParticipant = battle.host_id === user.id || battle.guest_id === user.id
+  if (!isParticipant) {
+    return NextResponse.json({ error: 'Not a player in this battle' }, { status: 403 })
+  }
+
   if (battle.status === 'finished') {
     // Battle already finished — return current scores without updating again
     return NextResponse.json({
@@ -32,6 +37,10 @@ export async function POST(
     })
   }
 
+  if (battle.status !== 'active') {
+    return NextResponse.json({ error: 'Battle is not active' }, { status: 400 })
+  }
+
   // Tally scores from answers
   const { data: answers } = await adminSupabase
     .from('battle_answers')
@@ -39,8 +48,22 @@ export async function POST(
     .eq('battle_id', id)
 
   const totals: Record<string, number> = {}
+  const answerCounts: Record<string, number> = {}
   for (const a of (answers ?? [])) {
     totals[a.player_id] = (totals[a.player_id] ?? 0) + a.points_earned
+    answerCounts[a.player_id] = (answerCounts[a.player_id] ?? 0) + 1
+  }
+
+  const participantIds = [battle.host_id, battle.guest_id].filter(Boolean) as string[]
+  const incompletePlayer = participantIds.find(playerId =>
+    (answerCounts[playerId] ?? 0) < battle.question_count
+  )
+
+  if (incompletePlayer) {
+    return NextResponse.json(
+      { error: 'Battle still in progress', incomplete_player_id: incompletePlayer },
+      { status: 409 }
+    )
   }
 
   const hostScore  = totals[battle.host_id]  ?? 0
@@ -85,61 +108,49 @@ export async function POST(
 
   // Settle card bet if active
   if (battle.bet_status === 'matched' && winnerId) {
-    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/battles/${id}/settle-bet`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ winner_id: winnerId }),
-    })
+    const loserId = winnerId === battle.host_id ? battle.guest_id : battle.host_id
+    const loserStakedId = loserId === battle.host_id
+      ? battle.host_staked_inventory_id
+      : battle.guest_staked_inventory_id
+
+    if (loserStakedId && loserId) {
+      const { error: transferError } = await adminSupabase
+        .from('user_inventory')
+        .update({ user_id: winnerId, obtained_via: 'admin_grant' })
+        .eq('id', loserStakedId)
+        .eq('user_id', loserId)
+
+      if (transferError) {
+        console.error(`[finish] wager transfer error for ${loserStakedId}:`, transferError)
+        return NextResponse.json({ error: `Failed to settle wager: ${transferError.message}` }, { status: 500 })
+      }
+    }
+
+    const { error: betError } = await adminSupabase
+      .from('battles')
+      .update({ bet_status: 'settled' })
+      .eq('id', id)
+      .eq('bet_status', 'matched')
+
+    if (betError) {
+      console.error(`[finish] wager status update error for ${id}:`, betError)
+      return NextResponse.json({ error: `Failed to settle wager: ${betError.message}` }, { status: 500 })
+    }
   }
 
   // Update profiles for both players
-  const playerIds = [battle.host_id, battle.guest_id].filter(Boolean) as string[]
+  const playerIds = participantIds
   for (const playerId of playerIds) {
     const isWinner = playerId === winnerId
     const isDraw   = winnerId === null
 
-    const { data: profile } = await adminSupabase
-      .from('profiles')
-      .select('total_points, points_balance, wins, losses, current_streak, best_streak')
-      .eq('id', playerId)
-      .single()
-
-    if (!profile) continue
-
     const earnedPoints = (totals[playerId] ?? 0) + (isWinner ? 200 : 0)
-    const newPoints    = profile.total_points + earnedPoints
-    const newBalance   = (profile.points_balance ?? profile.total_points) + earnedPoints
-    const { level, rank_title } = getLevelAndRank(newPoints)
-
-    let newWins          = profile.wins
-    let newLosses        = profile.losses
-    let newCurrentStreak = profile.current_streak
-    let newBestStreak    = profile.best_streak
-
-    if (isWinner) {
-      newWins          = profile.wins + 1
-      newCurrentStreak = profile.current_streak + 1
-      newBestStreak    = Math.max(profile.best_streak, newCurrentStreak)
-    } else if (!isDraw) {
-      // Loss
-      newLosses        = profile.losses + 1
-      newCurrentStreak = 0
-    }
-    // Draw: wins/losses/streak unchanged
-
-    const { error: updateError } = await adminSupabase
-      .from('profiles')
-      .update({
-        total_points:    newPoints,
-        points_balance:  newBalance,
-        wins:            newWins,
-        losses:          newLosses,
-        current_streak:  newCurrentStreak,
-        best_streak:     newBestStreak,
-        level,
-        rank_title,
-      })
-      .eq('id', playerId)
+    const { error: updateError } = await adminSupabase.rpc('apply_profile_battle_result', {
+      p_profile_id:    playerId,
+      p_earned_points: earnedPoints,
+      p_is_winner:     isWinner,
+      p_is_draw:       isDraw,
+    })
 
     if (updateError) {
       console.error(`[finish] profile update error for ${playerId}:`, updateError)

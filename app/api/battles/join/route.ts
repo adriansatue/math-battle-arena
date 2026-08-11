@@ -35,13 +35,24 @@ export async function POST(request: Request) {
   }
 
   // Join the battle as guest
-  const { error: joinError } = await adminSupabase
+  const { data: joinedBattle, error: joinError } = await adminSupabase
     .from('battles')
     .update({ guest_id: user.id })
     .eq('id', battle.id)
+    .is('guest_id', null)
+    .select('id')
+    .single()
+
+  if (joinError?.code === 'PGRST116') {
+    return NextResponse.json({ error: 'Battle already has an opponent' }, { status: 409 })
+  }
 
   if (joinError) {
     return NextResponse.json({ error: joinError.message }, { status: 500 })
+  }
+
+  if (!joinedBattle) {
+    return NextResponse.json({ error: 'Battle already has an opponent' }, { status: 409 })
   }
 
   return NextResponse.json({ battle_id: battle.id, mode: battle.mode, difficulty: battle.difficulty })

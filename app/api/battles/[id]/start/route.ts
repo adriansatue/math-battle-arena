@@ -36,12 +36,32 @@ export async function POST(
     return NextResponse.json({ error: 'Battle already started' }, { status: 400 })
   }
 
-  // If host staked a card, guest must also stake before the battle can start
-  if (battle.host_staked_inventory_id && !battle.guest_staked_inventory_id) {
+  if (!battle.guest_id) {
+    return NextResponse.json({ error: 'Cannot start without an opponent' }, { status: 400 })
+  }
+
+  // If either player stakes a card, both sides must stake before the battle can start.
+  const hasPartialStake = Boolean(battle.host_staked_inventory_id) !== Boolean(battle.guest_staked_inventory_id)
+  if (hasPartialStake) {
     return NextResponse.json(
       { error: 'bet_not_matched', message: 'Waiting for opponent to match the card bet' },
       { status: 400 }
     )
+  }
+
+  if (battle.host_staked_inventory_id && battle.guest_staked_inventory_id) {
+    const { data: stakedItems } = await adminSupabase
+      .from('user_inventory')
+      .select('id, user_id')
+      .in('id', [battle.host_staked_inventory_id, battle.guest_staked_inventory_id])
+
+    const owners = new Map((stakedItems ?? []).map(item => [item.id, item.user_id]))
+    if (
+      owners.get(battle.host_staked_inventory_id) !== battle.host_id ||
+      owners.get(battle.guest_staked_inventory_id) !== battle.guest_id
+    ) {
+      return NextResponse.json({ error: 'One or more staked cards are no longer available' }, { status: 409 })
+    }
   }
 
   // Generate questions
@@ -52,10 +72,11 @@ export async function POST(
 
   const now = new Date().toISOString()
 
-  // Insert questions using admin client (bypasses RLS)
+  // Insert questions using admin client (bypasses RLS). Upsert makes this
+  // idempotent if the host double-clicks start or two requests race.
   const { error: qError } = await adminSupabase
     .from('battle_questions')
-    .insert(
+    .upsert(
       questions.map((q, i) => ({
         battle_id:      id,
         sequence:       i + 1,
@@ -64,7 +85,8 @@ export async function POST(
         category:       q.category,
         difficulty:     q.difficulty,
         server_sent_at: now,
-      }))
+      })),
+      { onConflict: 'battle_id,sequence', ignoreDuplicates: true }
     )
 
   if (qError) {
@@ -72,7 +94,7 @@ export async function POST(
   }
 
   // Update battle status (admin client)
-  const { error: updateError } = await adminSupabase
+  const { data: updatedBattle, error: updateError } = await adminSupabase
     .from('battles')
     .update({
       status:       'active',
@@ -80,9 +102,12 @@ export async function POST(
       current_turn: battle.host_id,
     })
     .eq('id', id)
+    .eq('status', 'waiting')
+    .select('id')
+    .single()
 
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  if (updateError || !updatedBattle) {
+    return NextResponse.json({ error: 'Battle already started' }, { status: 409 })
   }
 
   // Update all questions' server_sent_at to NOW (not when they were created)

@@ -25,12 +25,6 @@ const BRACKETS: { key: Bracket; label: string; emoji: string; desc: string; min:
   { key: 'all',       label: 'All Players',  emoji: '🌍', desc: 'Everyone',   min: 1, max: 99 },
 ]
 
-function bracketForLevel(level: number): Bracket {
-  if (level <= 2) return 'beginner'
-  if (level <= 5) return 'rising'
-  return 'champion'
-}
-
 export default function LeaderboardPage() {
   const [players,      setPlayers]      = useState<Player[]>([])
   const [loading,      setLoading]      = useState(true)

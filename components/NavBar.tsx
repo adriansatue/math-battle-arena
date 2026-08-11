@@ -9,14 +9,12 @@ import { SwordLogo } from '@/components/SwordLogo'
 export default function NavBar() {
   const pathname = usePathname()
   const supabase = createClient()
-  const [userId,  setUserId]  = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      setUserId(user.id)
 
       const { data } = await supabase
         .from('profiles')

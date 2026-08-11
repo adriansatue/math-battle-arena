@@ -1,18 +1,24 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getBotAnswer, getBotDelay, BOT_CONFIGS } from '@/lib/game/bot'
+import { getBotAnswer, getBotDelay } from '@/lib/game/bot'
 import type { BotDifficulty } from '@/lib/game/bot'
 import { calculatePoints } from '@/lib/game/scoring'
 import type { Difficulty } from '@/lib/game/questions'
+import { isUniqueViolation } from '@/lib/supabase/errors'
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+  const supabase = await createClient()
   const adminSupabase = createAdminClient()
 
-  const { question_id, bot_difficulty } = await request.json()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { question_id } = await request.json()
 
   // Fetch question with correct answer
   const { data: question } = await adminSupabase
@@ -37,6 +43,18 @@ export async function POST(
     return NextResponse.json({ error: 'Not a bot battle' }, { status: 400 })
   }
 
+  if (battle.status !== 'active') {
+    return NextResponse.json({ error: 'Battle is not active' }, { status: 400 })
+  }
+
+  if (battle.host_id !== user.id && battle.guest_id !== user.id) {
+    return NextResponse.json({ error: 'Not a player in this battle' }, { status: 403 })
+  }
+
+  if (user.id === battle.bot_id) {
+    return NextResponse.json({ error: 'Bot user cannot trigger bot answer' }, { status: 403 })
+  }
+
   // Check if bot already answered
   const { data: existing } = await adminSupabase
     .from('battle_answers')
@@ -49,8 +67,7 @@ export async function POST(
     return NextResponse.json({ message: 'Already answered' })
   }
 
-  const diff      = (bot_difficulty ?? 'medium') as BotDifficulty
-  const config    = BOT_CONFIGS[diff]
+  const diff      = (battle.difficulty ?? 'medium') as BotDifficulty
   const { answer, isCorrect } = getBotAnswer(
     Number(question.correct_answer),
     diff
@@ -69,7 +86,7 @@ export async function POST(
   })
 
   // Save bot answer
-  await adminSupabase
+  const { error: insertError } = await adminSupabase
     .from('battle_answers')
     .insert({
       battle_id:           id,
@@ -83,9 +100,14 @@ export async function POST(
       flagged:             false,
     })
 
+  if (insertError) {
+    if (isUniqueViolation(insertError)) {
+      return NextResponse.json({ message: 'Already answered' })
+    }
+    return NextResponse.json({ error: insertError.message }, { status: 500 })
+  }
+
   return NextResponse.json({
-    is_correct:    isCorrect,
-    answer_given:  answer,
     points_earned: pointsEarned,
     time_taken_ms: timeTakenMs,
   })

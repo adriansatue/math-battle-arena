@@ -3,10 +3,12 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // ── SIGN UP ───────────────────────────────────
 export async function signUp(formData: FormData) {
   const supabase = await createClient()
+  const adminSupabase = createAdminClient()
 
   const email    = formData.get('email') as string
   const password = formData.get('password') as string
@@ -18,7 +20,7 @@ export async function signUp(formData: FormData) {
   }
 
   // Check username is not taken
-  const { data: existing } = await supabase
+  const { data: existing } = await adminSupabase
     .from('profiles')
     .select('id')
     .eq('username', username)
@@ -137,6 +139,7 @@ export async function signInWithGoogle() {
 // ── SAVE USERNAME (for new OAuth users) ───────
 export async function saveUsername(formData: FormData) {
   const supabase = await createClient()
+  const adminSupabase = createAdminClient()
   const username = (formData.get('username') as string ?? '').trim()
 
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
@@ -147,7 +150,7 @@ export async function saveUsername(formData: FormData) {
   if (!user) return { error: 'Not authenticated.' }
 
   // Check username is not taken
-  const { data: existing } = await supabase
+  const { data: existing } = await adminSupabase
     .from('profiles')
     .select('id')
     .eq('username', username)
@@ -155,7 +158,7 @@ export async function saveUsername(formData: FormData) {
     .single()
   if (existing) return { error: 'Username is already taken. Try another one!' }
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await adminSupabase
     .from('profiles')
     .update({ username })
     .eq('id', user.id)

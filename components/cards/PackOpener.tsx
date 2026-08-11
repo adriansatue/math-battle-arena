@@ -68,17 +68,29 @@ function FlipCard({
   const [flipped,      setFlipped]      = useState(false)
   const [flashing,     setFlashing]     = useState(false)
   const [showParticle, setShowParticle] = useState(false)
+  const animationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const cfg = RARITY[card.rarity]
 
   useEffect(() => {
-    if (isRevealed && !flipped) {
+    if (!isRevealed || flipped) return
+
+    const startTimer = setTimeout(() => {
       setFlipped(true)
       setFlashing(true)
       if (card.rarity !== 'common') setShowParticle(true)
-      setTimeout(() => setFlashing(false), 500)
-      setTimeout(() => setShowParticle(false), 1300)
-    }
+
+      const flashTimer = setTimeout(() => setFlashing(false), 500)
+      const particleTimer = setTimeout(() => setShowParticle(false), 1300)
+      animationTimersRef.current.push(flashTimer, particleTimer)
+    }, 0)
+
+    animationTimersRef.current.push(startTimer)
   }, [isRevealed, flipped, card.rarity])
+
+  useEffect(() => {
+    const timers = animationTimersRef.current
+    return () => { timers.forEach(clearTimeout) }
+  }, [])
 
   const particles = PARTICLES[card.rarity] ?? PARTICLES.common
 
@@ -224,7 +236,8 @@ export function PackOpener({ cards, onClose }: PackOpenerProps) {
 
   // Clear staggered timers if component unmounts mid-reveal
   useEffect(() => {
-    return () => { revealTimersRef.current.forEach(clearTimeout) }
+    const timers = revealTimersRef.current
+    return () => { timers.forEach(clearTimeout) }
   }, [])
 
   const overlayBg = {

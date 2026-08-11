@@ -123,24 +123,30 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     // Give the opponent a couple of seconds after we finish; then end regardless
     const delay = opponentFinished ? 1500 : 3000
     const timeout = setTimeout(async () => {
-      try {
-        // Call finish to finalize the battle and update scores
-        const finishRes = await fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
-        if (finishRes.ok) {
-          // Small delay to ensure DB is updated before redirect
-          await new Promise(resolve => setTimeout(resolve, 100))
-          router.push(`/results/${battleId}`)
+      const tryFinish = async (attempt = 1) => {
+        try {
+          const finishRes = await fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
+          if (finishRes.ok) {
+            await broadcast('battle:end', { battle_id: battleId })
+            await new Promise(resolve => setTimeout(resolve, 100))
+            router.push(`/results/${battleId}`)
+            return
+          }
+
+          if (finishRes.status === 409 && attempt < 20) {
+            setTimeout(() => tryFinish(attempt + 1), 1500)
+          }
+        } catch (err) {
+          console.error('Finish error:', err)
+          if (attempt < 20) setTimeout(() => tryFinish(attempt + 1), 1500)
         }
-      } catch (err) {
-        console.error('Finish error:', err)
-        // Redirect anyway after a delay
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        router.push(`/results/${battleId}`)
       }
+
+      await tryFinish()
     }, delay)
 
     return () => clearTimeout(timeout)
-  }, [status, opponentFinished, battleId, router])
+  }, [status, opponentFinished, battleId, router, broadcast])
 
   // Polling fallback: while waiting, check every 3s if guest joined and start if so
   // This backs up the Realtime path which can miss the event after a re-render
@@ -449,13 +455,55 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     }
   }
 
-  function handleTimerExpire() {
-    if (answeredRef.current || answered) return
+  async function handleTimerExpire() {
+    const currentQuestion = questions[currentQ]
+    if (answeredRef.current || answered || !currentQuestion) return
     answeredRef.current = true
     setAnswered(true)
     setPendingAnswer(null)
     setCorrectAnswer(null)
     setLastResult({ correct: false, points: 0 })
+
+    const timeTakenMs = serverSentAt
+      ? Math.max(0, Date.now() - new Date(serverSentAt).getTime())
+      : (battle?.time_per_q_secs as number ?? 10) * 1000
+
+    await fetch(`/api/battles/${battleId}/answer`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        question_id:   currentQuestion.id,
+        answer_given:  null,
+        time_taken_ms: timeTakenMs,
+        timed_out:     true,
+      }),
+    }).catch(err => console.error('Timeout answer error:', err))
+
+    await broadcast('answer:result', {
+      player_id:      userId,
+      is_correct:     false,
+      points_earned:  0,
+      current_streak: 0,
+    })
+
+    if (battle?.bot_id) {
+      setTimeout(async () => {
+        await fetch(`/api/battles/${battleId}/bot`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ question_id: currentQuestion.id }),
+        }).then(r => r.json()).then(botData => {
+          if (botData.points_earned !== undefined) {
+            setPlayers(prev => prev.map(p =>
+              p.userId === (battle.bot_id as string)
+                ? { ...p, score: p.score + (botData.points_earned ?? 0) }
+                : p
+            ))
+          }
+        }).catch(err => console.error('Bot timeout answer error:', err))
+      }, 1000 + Math.random() * 3000)
+    }
+
     setTimeout(() => {
       if (currentQ + 1 < questions.length) {
         setCurrentQ(prev => prev + 1)

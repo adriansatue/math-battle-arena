@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { timeLimits } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
 
@@ -9,6 +10,7 @@ function generateInviteCode(): string {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const adminSupabase = createAdminClient()
 
   // Auth check
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -30,7 +32,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'question_count must be between 1 and 50' }, { status: 400 })
   }
 
-  const { data: battle, error } = await supabase
+  const { data: battle, error } = await adminSupabase
     .from('battles')
     .insert({
       host_id:        user.id,

@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 interface FlaggedAnswer {
   id:                  string
@@ -13,8 +13,8 @@ interface FlaggedAnswer {
   points_earned:       number
   answered_at:         string
   player_id:           string
-  profiles:            { username: string }
-  battle_questions:    { question_text: string; correct_answer: number }
+  profiles:            { username: string } | null
+  battle_questions:    { question_text: string; correct_answer: number } | null
 }
 
 export default function AdminFlaggedPage() {
@@ -34,19 +34,15 @@ export default function AdminFlaggedPage() {
         .from('profiles').select('is_admin').eq('id', user.id).single()
       if (!profile?.is_admin) { router.push('/lobby'); return }
 
-      const { data } = await supabase
-        .from('battle_answers')
-        .select(`
-          id, answer_given, time_taken_ms, server_validated_ms,
-          points_earned, answered_at, player_id,
-          profiles ( username ),
-          battle_questions ( question_text, correct_answer )
-        `)
-        .eq('flagged', true)
-        .order('answered_at', { ascending: false })
-        .limit(100)
+      const res = await fetch('/api/admin/flagged')
+      if (!res.ok) {
+        setAnswers([])
+        setLoading(false)
+        return
+      }
 
-      setAnswers((data as unknown as FlaggedAnswer[]) ?? [])
+      const data = await res.json()
+      setAnswers((data.answers as FlaggedAnswer[]) ?? [])
       setLoading(false)
     }
     load()
@@ -54,20 +50,14 @@ export default function AdminFlaggedPage() {
 
   async function clearFlag(id: string) {
     setClearing(id)
-    await supabase
-      .from('battle_answers')
-      .update({ flagged: false })
-      .eq('id', id)
-    setAnswers(prev => prev.filter(a => a.id !== id))
+    const res = await fetch(`/api/admin/flagged/${id}`, { method: 'PATCH' })
+    if (res.ok) setAnswers(prev => prev.filter(a => a.id !== id))
     setClearing(null)
   }
 
   async function clearAll() {
-    await supabase
-      .from('battle_answers')
-      .update({ flagged: false })
-      .eq('flagged', true)
-    setAnswers([])
+    const res = await fetch('/api/admin/flagged', { method: 'PATCH' })
+    if (res.ok) setAnswers([])
   }
 
   if (loading) return (
@@ -82,20 +72,20 @@ export default function AdminFlaggedPage() {
 
         <div className="flex items-center justify-between mb-6">
           <div>
-            <Link href="/admin" className="text-gray-500 hover:text-gray-300 text-sm">← Admin</Link>
-            <h1 className="text-2xl font-bold text-white mt-1">🚩 Flagged Answers</h1>
+            <Link href="/admin" className="text-gray-500 hover:text-gray-300 text-sm">Back to Admin</Link>
+            <h1 className="text-2xl font-bold text-white mt-1">Flagged Answers</h1>
           </div>
           {answers.length > 0 && (
             <button onClick={clearAll}
               className="bg-green-600 hover:bg-green-500 text-white text-sm font-bold px-4 py-2 rounded-xl transition">
-              ✅ Clear All Flags
+              Clear All Flags
             </button>
           )}
         </div>
 
         {answers.length === 0 ? (
           <div className="text-center py-20">
-            <div className="text-5xl mb-4">✅</div>
+            <div className="text-5xl mb-4">OK</div>
             <p className="text-white font-bold text-xl mb-2">No flagged answers!</p>
             <p className="text-gray-400">The anti-cheat system has not flagged anything suspicious.</p>
           </div>
@@ -139,7 +129,7 @@ export default function AdminFlaggedPage() {
                       </td>
                       <td className="p-4">
                         <span className={`text-sm font-bold ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
-                          {a.answer_given} {isCorrect ? '✓' : '✗'}
+                          {a.answer_given} {isCorrect ? 'correct' : 'wrong'}
                         </span>
                       </td>
                       <td className="p-4">
@@ -148,7 +138,7 @@ export default function AdminFlaggedPage() {
                       <td className="p-4">
                         <span className={`text-sm ${suspicious ? 'text-red-400 font-bold' : 'text-gray-300'}`}>
                           {a.server_validated_ms}ms
-                          {suspicious && ' ⚠️'}
+                          {suspicious && ' suspicious'}
                         </span>
                       </td>
                       <td className="p-4">

@@ -8,9 +8,9 @@ import Link from 'next/link'
 interface ReviewItem {
   sequence:       number
   questionText:   string
-  answerGiven?:   number
+  answerGiven?:   number | null
   isCorrect:      boolean
-  correctAnswer?: number
+  correctAnswer?: number | null
   points:         number
 }
 
@@ -81,40 +81,10 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
       for (const p of (profs ?? [])) map[p.id] = p.username
       setProfiles(map)
 
-      // Fetch per-question review for the current user
-      const [{ data: answers }, { data: qs }] = await Promise.all([
-        supabase
-          .from('battle_answers')
-          .select('question_id, answer_given, is_correct, points_earned')
-          .eq('battle_id', battleId)
-          .eq('player_id', user.id),
-        supabase
-          .from('battle_questions')
-          .select('id, sequence, question_text, correct_answer')
-          .eq('battle_id', battleId)
-          .order('sequence'),
-      ])
-
-      if (answers && qs) {
-        type QRow = { id: string; sequence: number; question_text: string; correct_answer: number }
-        type ARow = { question_id: string; answer_given: number; is_correct: boolean; points_earned: number }
-        const qMap = Object.fromEntries((qs as QRow[]).map(q => [q.id, q]))
-        const items: ReviewItem[] = (answers as ARow[])
-          .map(a => {
-            const q = qMap[a.question_id]
-            if (!q) return null
-            return {
-              sequence:      q.sequence,
-              questionText:  q.question_text,
-              answerGiven:   a.answer_given,
-              isCorrect:     a.is_correct,
-              correctAnswer: a.is_correct ? undefined : q.correct_answer,
-              points:        a.points_earned,
-            }
-          })
-          .filter(Boolean)
-          .sort((a, b) => a!.sequence - b!.sequence) as ReviewItem[]
-        setReview(items)
+      const reviewRes = await fetch(`/api/battles/${battleId}/review`)
+      if (reviewRes.ok) {
+        const reviewData = await reviewRes.json()
+        setReview((reviewData.review as ReviewItem[]) ?? [])
       }
     }
     load()

@@ -13,7 +13,10 @@ export async function POST(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { inventory_id } = await request.json()
+  const { inventory_id } = await request.json().catch(() => ({}))
+  if (typeof inventory_id !== 'string' || inventory_id.length === 0) {
+    return NextResponse.json({ error: 'inventory_id is required' }, { status: 400 })
+  }
 
   // Fetch battle
   const { data: battle } = await adminSupabase
@@ -35,6 +38,20 @@ export async function POST(
 
   if (!item) return NextResponse.json({ error: 'Card not found in your collection' }, { status: 404 })
 
+  const { data: activeStake } = await adminSupabase
+    .from('battles')
+    .select('id')
+    .in('status', ['waiting', 'active'])
+    .in('bet_status', ['offered', 'matched'])
+    .or(`host_staked_inventory_id.eq.${inventory_id},guest_staked_inventory_id.eq.${inventory_id}`)
+    .neq('id', id)
+    .limit(1)
+    .single()
+
+  if (activeStake) {
+    return NextResponse.json({ error: 'Card is already staked in another battle' }, { status: 409 })
+  }
+
   const isHost  = battle.host_id  === user.id
   const isGuest = battle.guest_id === user.id
 
@@ -43,13 +60,26 @@ export async function POST(
   }
 
   const update = isHost
-    ? { host_staked_inventory_id: inventory_id, bet_status: 'offered' }
-    : { guest_staked_inventory_id: inventory_id, bet_status: 'matched' }
+    ? {
+        host_staked_inventory_id: inventory_id,
+        bet_status: battle.guest_staked_inventory_id ? 'matched' : 'offered',
+      }
+    : {
+        guest_staked_inventory_id: inventory_id,
+        bet_status: battle.host_staked_inventory_id ? 'matched' : 'offered',
+      }
 
-  await adminSupabase
+  const { data: updatedBattle, error: updateError } = await adminSupabase
     .from('battles')
     .update(update)
     .eq('id', id)
+    .eq('status', 'waiting')
+    .select('id')
+    .single()
+
+  if (updateError || !updatedBattle) {
+    return NextResponse.json({ error: 'Battle is no longer accepting stakes' }, { status: 409 })
+  }
 
   return NextResponse.json({ success: true })
 }
@@ -73,12 +103,28 @@ export async function DELETE(
     return NextResponse.json({ error: 'Cannot unstake' }, { status: 400 })
   }
 
-  const isHost = battle.host_id === user.id
+  const isHost  = battle.host_id === user.id
+  const isGuest = battle.guest_id === user.id
+
+  if (!isHost && !isGuest) {
+    return NextResponse.json({ error: 'Not a player in this battle' }, { status: 403 })
+  }
+
   const update = isHost
-    ? { host_staked_inventory_id: null, bet_status: 'none' }
+    ? { host_staked_inventory_id: null, bet_status: battle.guest_staked_inventory_id ? 'offered' : 'none' }
     : { guest_staked_inventory_id: null, bet_status: battle.host_staked_inventory_id ? 'offered' : 'none' }
 
-  await adminSupabase.from('battles').update(update).eq('id', id)
+  const { data: updatedBattle, error: updateError } = await adminSupabase
+    .from('battles')
+    .update(update)
+    .eq('id', id)
+    .eq('status', 'waiting')
+    .select('id')
+    .single()
+
+  if (updateError || !updatedBattle) {
+    return NextResponse.json({ error: 'Battle is no longer accepting stakes' }, { status: 409 })
+  }
 
   return NextResponse.json({ success: true })
 }

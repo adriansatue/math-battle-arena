@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+/* eslint-disable @next/next/no-img-element */
+
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 interface Card {
   id:          string
@@ -55,59 +57,62 @@ export default function AdminCardsPage() {
     setSaving(true)
     setMessage(null)
 
-    if (editing.id) {
-      // Update existing
-      const { error } = await supabase
-        .from('reward_catalog')
-        .update({
-          name:        editing.name,
-          description: editing.description,
-          rarity:      editing.rarity,
-          image_url:   editing.image_url,
-          drop_weight: editing.drop_weight,
-          is_active:   editing.is_active,
-        })
-        .eq('id', editing.id)
+    const payload = {
+      name:        editing.name,
+      description: editing.description,
+      rarity:      editing.rarity,
+      image_url:   editing.image_url,
+      drop_weight: editing.drop_weight,
+      is_active:   editing.is_active ?? true,
+    }
 
-      if (!error) {
-        setCards(prev => prev.map(c => c.id === editing.id ? { ...c, ...editing } as Card : c))
-        setMessage('✅ Card updated!')
+    if (editing.id) {
+      const res = await fetch(`/api/admin/cards/${editing.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      })
+      const data = await res.json()
+
+      if (res.ok && data.card) {
+        setCards(prev => prev.map(c => c.id === editing.id ? data.card as Card : c))
+        setMessage('OK: Card updated.')
         setEditing(null)
       } else {
-        setMessage(`❌ ${error.message}`)
+        setMessage(`Error: ${data.error ?? 'Failed to update card'}`)
       }
     } else {
-      // Insert new
-      const { data, error } = await supabase
-        .from('reward_catalog')
-        .insert({
-          name:        editing.name,
-          description: editing.description,
-          rarity:      editing.rarity,
-          image_url:   editing.image_url,
-          drop_weight: editing.drop_weight,
-          is_active:   editing.is_active ?? true,
-        })
-        .select()
-        .single()
+      const res = await fetch('/api/admin/cards', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      })
+      const data = await res.json()
 
-      if (!error && data) {
-        setCards(prev => [...prev, data as Card])
-        setMessage('✅ Card added!')
+      if (res.ok && data.card) {
+        setCards(prev => [...prev, data.card as Card])
+        setMessage('OK: Card added.')
         setEditing(null)
       } else {
-        setMessage(`❌ ${error?.message}`)
+        setMessage(`Error: ${data.error ?? 'Failed to add card'}`)
       }
     }
     setSaving(false)
   }
 
   async function toggleActive(card: Card) {
-    await supabase
-      .from('reward_catalog')
-      .update({ is_active: !card.is_active })
-      .eq('id', card.id)
-    setCards(prev => prev.map(c => c.id === card.id ? { ...c, is_active: !c.is_active } : c))
+    const res = await fetch(`/api/admin/cards/${card.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ is_active: !card.is_active }),
+    })
+    const data = await res.json()
+
+    if (res.ok && data.card) {
+      setCards(prev => prev.map(c => c.id === card.id ? data.card as Card : c))
+    } else {
+      setMessage(`Error: ${data.error ?? 'Failed to update card'}`)
+    }
   }
 
   const rarityColor: Record<string, string> = {
@@ -131,8 +136,8 @@ export default function AdminCardsPage() {
 
         <div className="flex items-center justify-between mb-6">
           <div>
-            <Link href="/admin" className="text-gray-500 hover:text-gray-300 text-sm">← Admin</Link>
-            <h1 className="text-2xl font-bold text-white mt-1">🃏 Manage Cards</h1>
+            <Link href="/admin" className="text-gray-500 hover:text-gray-300 text-sm">Back to Admin</Link>
+            <h1 className="text-2xl font-bold text-white mt-1">Manage Cards</h1>
           </div>
           <button
             onClick={() => setEditing(EMPTY_CARD)}
@@ -144,11 +149,10 @@ export default function AdminCardsPage() {
 
         {message && (
           <div className={`mb-4 p-3 rounded-xl text-sm font-semibold ${
-            message.startsWith('✅') ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
+            message.startsWith('OK:') ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
           }`}>{message}</div>
         )}
 
-        {/* Filter */}
         <div className="flex gap-2 mb-4">
           {['all', 'legendary', 'rare', 'uncommon', 'common'].map(f => (
             <button key={f} onClick={() => setFilter(f)}
@@ -160,7 +164,6 @@ export default function AdminCardsPage() {
           ))}
         </div>
 
-        {/* Cards table */}
         <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
           <table className="w-full">
             <thead>
@@ -202,7 +205,7 @@ export default function AdminCardsPage() {
                           ? 'bg-green-500/20 text-green-400 hover:bg-red-500/20 hover:text-red-400'
                           : 'bg-red-500/20 text-red-400 hover:bg-green-500/20 hover:text-green-400'
                       }`}>
-                      {card.is_active ? '● Active' : '○ Inactive'}
+                      {card.is_active ? 'Active' : 'Inactive'}
                     </button>
                   </td>
                   <td className="p-4">
@@ -217,7 +220,6 @@ export default function AdminCardsPage() {
           </table>
         </div>
 
-        {/* Edit modal */}
         {editing && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <div className="bg-gray-900 rounded-2xl border border-gray-700 p-6 w-full max-w-md">

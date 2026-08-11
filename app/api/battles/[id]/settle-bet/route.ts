@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function POST(
@@ -6,9 +7,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+  const supabase = await createClient()
   const adminSupabase = createAdminClient()
 
   const { winner_id } = await request.json()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: battle } = await adminSupabase
     .from('battles')
@@ -18,10 +23,22 @@ export async function POST(
 
   if (!battle) return NextResponse.json({ error: 'Battle not found' }, { status: 404 })
   if (battle.bet_status !== 'matched') return NextResponse.json({ message: 'No active bet' })
+  if (battle.status !== 'finished') {
+    return NextResponse.json({ error: 'Battle is not finished' }, { status: 400 })
+  }
+
+  const isParticipant = battle.host_id === user.id || battle.guest_id === user.id
+  if (!isParticipant) {
+    return NextResponse.json({ error: 'Not a player in this battle' }, { status: 403 })
+  }
 
   // Validate winner_id is actually a participant in this battle
   if (winner_id !== battle.host_id && winner_id !== battle.guest_id) {
     return NextResponse.json({ error: 'Invalid winner' }, { status: 400 })
+  }
+
+  if (winner_id !== battle.winner_id) {
+    return NextResponse.json({ error: 'Winner does not match battle result' }, { status: 400 })
   }
 
   if (!battle.guest_id) {
@@ -44,6 +61,7 @@ export async function POST(
       .from('user_inventory')
       .update({ user_id: winner_id, obtained_via: 'admin_grant' })
       .eq('id', loserStakedId)
+      .eq('user_id', loser_id)
   }
 
   // Mark bet as settled

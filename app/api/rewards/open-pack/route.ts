@@ -139,11 +139,24 @@ export async function POST(request: Request) {
   // Assign a TAG grade (5–10) to each card
   const grades = picks.map(() => rollGrade())
 
-  // Deduct cost from spendable balance only (total_points stays as lifetime earned)
-  await adminSupabase
+  const newBalance = spendable - config.cost
+
+  // Deduct cost from spendable balance only (total_points stays as lifetime earned).
+  // The balance equality check prevents parallel pack-open requests from spending
+  // the same points twice.
+  const { data: chargedProfile, error: chargeError } = await adminSupabase
     .from('profiles')
-    .update({ points_balance: (profile.points_balance ?? profile.total_points) - config.cost })
+    .update({ points_balance: newBalance })
     .eq('id', user.id)
+    .eq('points_balance', spendable)
+    .select('points_balance')
+    .single()
+
+  if (chargeError || !chargedProfile) {
+    return NextResponse.json({
+      error: 'Your points balance changed. Please try opening the pack again.'
+    }, { status: 409 })
+  }
 
   // Add to inventory
   const { error: insertError } = await adminSupabase
@@ -160,8 +173,9 @@ export async function POST(request: Request) {
     // Roll back the points deduction so the user isn't charged for a failed pack
     await adminSupabase
       .from('profiles')
-      .update({ points_balance: profile.points_balance ?? profile.total_points })
+      .update({ points_balance: spendable })
       .eq('id', user.id)
+      .eq('points_balance', newBalance)
     console.error('[open-pack] insert error:', insertError)
     return NextResponse.json({ error: 'Failed to save cards: ' + insertError.message }, { status: 500 })
   }

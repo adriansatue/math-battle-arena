@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Timer }        from '@/components/battle/Timer'
 import { QuestionCard } from '@/components/battle/QuestionCard'
 import { PackOpener }   from '@/components/cards/PackOpener'
-import { generateWrongAnswers } from '@/lib/game/questions'
 import Link from 'next/link'
 
 interface Question {
@@ -83,22 +82,16 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
   const answeredRef  = useRef(false)   // synchronous guard against timer/click race
 
   async function fetchMcOptions(questionId: string): Promise<number[]> {
-    const { data } = await supabase
-      .from('battle_questions')
-      .select('correct_answer')
-      .eq('id', questionId)
-      .single()
-    if (!data) return []
-    const correct = Number(data.correct_answer)
-    const wrong   = generateWrongAnswers(correct, 3)
-    return [...wrong, correct].sort(() => Math.random() - 0.5)
+    const res = await fetch(`/api/questions/${questionId}/options`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data.options) ? data.options : []
   }
 
   useEffect(() => {
     if (answerMode === 'multiple_choice' && questions[currentQ]) {
       fetchMcOptions(questions[currentQ].id).then(setMcOptions)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQ, questions, answerMode])
 
   useEffect(() => {
@@ -220,12 +213,35 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
     }, 1200)
   }, [answered, questions, currentQ, serverSentAt, battleId, results, finishSession, POINTS_MULTIPLIER])
 
-  function handleTimerExpire() {
-    if (answeredRef.current || answered) return
+  async function handleTimerExpire() {
+    if (answeredRef.current || answered || !questions[currentQ]) return
     answeredRef.current = true
     setAnswered(true)
     setPendingAnswer(null)
-    const result: Result = { correct: false, points: 0 }
+
+    const timeTakenMs = serverSentAt
+      ? Math.max(0, Date.now() - new Date(serverSentAt).getTime())
+      : (battle?.time_per_q_secs as number ?? 15) * 1000
+    timingsRef.current.push(timeTakenMs)
+
+    const res = await fetch(`/api/battles/${battleId}/answer`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        question_id:   questions[currentQ].id,
+        answer_given:  null,
+        time_taken_ms: timeTakenMs,
+        timed_out:     true,
+        multiplier:    POINTS_MULTIPLIER,
+      }),
+    }).catch(() => null)
+    const data = res ? await res.json().catch(() => ({})) : {}
+
+    const result: Result = {
+      correct:       false,
+      points:        0,
+      correctAnswer: data.correct_answer,
+    }
     setLastResult(result)
     setResults(prev => [...prev, result])
     setStreak(0)

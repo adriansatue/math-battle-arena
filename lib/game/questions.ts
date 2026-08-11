@@ -19,7 +19,6 @@ export interface Question {
 const rand = (min: number, max: number) =>
   Math.floor(Math.random() * (max - min + 1)) + min
 
-const fraction = (num: number, den: number) => ({ num, den })
 const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b)
 const simplify = (num: number, den: number) => {
   const g = gcd(Math.abs(num), Math.abs(den))

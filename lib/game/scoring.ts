@@ -35,7 +35,8 @@ export function calculatePoints(params: ScoreParams): number {
 
   const multiplier    = DIFFICULTY_MULTIPLIER[difficulty]
   const timeLimitMs   = timeLimitSecs * 1000
-  const timeRemaining = Math.max(0, timeLimitMs - timeTakenMs)
+  const boundedTimeTaken = Math.max(0, timeTakenMs)
+  const timeRemaining = Math.min(timeLimitMs, Math.max(0, timeLimitMs - boundedTimeTaken))
 
   // Decay formula: max_speed_bonus × (time_remaining / time_total)
   // Clamp to ensure bonus is never negative (late answers should just get base points)

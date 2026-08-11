@@ -5,6 +5,9 @@ import { generateQuestions } from '@/lib/game/questions'
 import { timeLimits } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
 
+const MODES = ['realtime', 'turnbased'] as const
+const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
+
 const BOT_META = {
   easy:   { email: 'bot-easy@mathbattle.internal',   username: '🤖 MathBot Easy',   level: 2 },
   medium: { email: 'bot-medium@mathbattle.internal', username: '🤖 MathBot Medium', level: 5 },
@@ -63,7 +66,20 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { mode, difficulty, bot_difficulty } = await request.json()
-  const diff = (bot_difficulty ?? difficulty ?? 'medium') as 'easy' | 'medium' | 'hard'
+
+  if (!MODES.includes(mode)) {
+    return NextResponse.json({ error: 'Invalid mode' }, { status: 400 })
+  }
+
+  if (!DIFFICULTIES.includes(difficulty)) {
+    return NextResponse.json({ error: 'Invalid difficulty' }, { status: 400 })
+  }
+
+  const requestedBotDifficulty = bot_difficulty ?? difficulty
+  if (!DIFFICULTIES.includes(requestedBotDifficulty)) {
+    return NextResponse.json({ error: 'Invalid bot difficulty' }, { status: 400 })
+  }
+  const diff = requestedBotDifficulty as Difficulty
 
   let botId: string
   try {

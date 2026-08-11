@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { calculatePoints, isFlagged, BASE_POINTS, DIFFICULTY_MULTIPLIER } from '@/lib/game/scoring'
 import type { Difficulty } from '@/lib/game/questions'
+import { isUniqueViolation } from '@/lib/supabase/errors'
 
 export async function POST(
   request: Request,
@@ -13,6 +15,7 @@ export async function POST(
 
   const { id } = await params
   const supabase = await createClient()
+  const adminSupabase = createAdminClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
@@ -20,15 +23,20 @@ export async function POST(
   }
 
   const body = await request.json()
-  const { question_id, answer_given, time_taken_ms, multiplier } = body
+  const { question_id, answer_given, time_taken_ms, multiplier, timed_out } = body
+  const isTimeout = timed_out === true
 
   // Validate answer_given — must be a finite number
-  if (typeof answer_given !== 'number' || !isFinite(answer_given) || isNaN(answer_given)) {
+  if (!isTimeout && (typeof answer_given !== 'number' || !isFinite(answer_given) || isNaN(answer_given))) {
     return NextResponse.json({ error: 'Invalid answer format' }, { status: 400 })
   }
 
+  if (typeof time_taken_ms !== 'number' || !isFinite(time_taken_ms) || isNaN(time_taken_ms) || time_taken_ms < 0) {
+    return NextResponse.json({ error: 'Invalid timing format' }, { status: 400 })
+  }
+
   // Fetch question with correct_answer (server only)
-  const { data: question, error: qError } = await supabase
+  const { data: question, error: qError } = await adminSupabase
     .from('battle_questions')
     .select('*')
     .eq('id', question_id)
@@ -40,7 +48,7 @@ export async function POST(
   }
 
   // Fetch battle for time limit + difficulty
-  const { data: battle } = await supabase
+  const { data: battle } = await adminSupabase
     .from('battles')
     .select('*')
     .eq('id', id)
@@ -48,6 +56,15 @@ export async function POST(
 
   if (!battle) {
     return NextResponse.json({ error: 'Battle not found' }, { status: 404 })
+  }
+
+  const isParticipant = battle.host_id === user.id || battle.guest_id === user.id
+  if (!isParticipant) {
+    return NextResponse.json({ error: 'Not a player in this battle' }, { status: 403 })
+  }
+
+  if (battle.status !== 'active') {
+    return NextResponse.json({ error: 'Battle is not active' }, { status: 400 })
   }
 
   const timeLimitMs = battle.time_per_q_secs * 1000
@@ -81,7 +98,7 @@ export async function POST(
   const isOverTime = serverValidatedMs > timeLimitMs + GRACE_MS
 
   // Check if already answered by this player
-  const { data: existing } = await supabase
+  const { data: existing } = await adminSupabase
     .from('battle_answers')
     .select('id')
     .eq('question_id', question_id)
@@ -93,12 +110,12 @@ export async function POST(
   }
 
   // Check correctness (allow small float tolerance for fractions)
-  const isCorrect = Math.abs(Number(answer_given) - Number(question.correct_answer)) < 0.01
+  const isCorrect = !isTimeout && Math.abs(Number(answer_given) - Number(question.correct_answer)) < 0.01
 
   // Atomic claimed_by update for first-answer bonus (realtime mode)
   let isFirstAnswer = false
   if (isCorrect && battle.mode === 'realtime') {
-    const { data: claimed } = await supabase
+    const { data: claimed } = await adminSupabase
       .from('battle_questions')
       .update({ claimed_by: user.id, claimed_at: new Date().toISOString() })
       .eq('id', question_id)
@@ -110,7 +127,7 @@ export async function POST(
   }
 
   // Get current streak for this player in this battle
-  const { data: prevAnswers } = await supabase
+  const { data: prevAnswers } = await adminSupabase
     .from('battle_answers')
     .select('is_correct')
     .eq('battle_id', id)
@@ -128,7 +145,7 @@ export async function POST(
   // Offset by the client transition delay (1200ms anim + ~300ms network buffer = 1500ms)
   // so the clock for the next question only starts when it's actually visible to the player.
   const NEXT_Q_OFFSET_MS = 1500
-  await supabase
+  await adminSupabase
     .from('battle_questions')
     .update({ server_sent_at: new Date(requestArrivalMs + NEXT_Q_OFFSET_MS).toISOString() })
     .eq('battle_id', id)
@@ -139,7 +156,7 @@ export async function POST(
   // If overtime but still correct, award base points only (no speed/streak/first bonus).
   // This prevents the confusing "+0 pts" on a correct answer caused by borderline timing.
   const baseOnlyPoints = isCorrect ? Math.round(BASE_POINTS * DIFFICULTY_MULTIPLIER[battle.difficulty as Difficulty]) : 0
-  const rawPoints = isOverTime ? baseOnlyPoints : calculatePoints({
+  const rawPoints = isTimeout ? 0 : isOverTime ? baseOnlyPoints : calculatePoints({
     difficulty:    battle.difficulty as Difficulty,
     isCorrect,
     timeTakenMs:   serverValidatedMs,
@@ -163,16 +180,16 @@ export async function POST(
   const pointsEarned = Math.round(rawPoints * safeMultiplier)
 
   // Flag suspicious timing
-  const flagged = isFlagged(time_taken_ms, serverValidatedMs, battle.time_per_q_secs)
+  const flagged = isTimeout ? false : isFlagged(time_taken_ms, serverValidatedMs, battle.time_per_q_secs)
 
   // Save the answer
-  const { error: insertError } = await supabase
+  const { error: insertError } = await adminSupabase
     .from('battle_answers')
     .insert({
       battle_id:           id,
       question_id,
       player_id:           user.id,
-      answer_given:        Number(answer_given),
+      answer_given:        isTimeout ? 0 : Number(answer_given),
       is_correct:          isCorrect,
       time_taken_ms,
       server_validated_ms: serverValidatedMs,
@@ -181,6 +198,9 @@ export async function POST(
     })
 
   if (insertError) {
+    if (isUniqueViolation(insertError)) {
+      return NextResponse.json({ error: 'Already answered' }, { status: 409 })
+    }
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 
