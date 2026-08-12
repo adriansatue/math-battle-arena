@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { WIN_XP_BONUS, getRewardMode } from '@/lib/game/scoring'
 
 interface Player {
   id:            string
   username:      string
   total_points:  number
+  rating:        number
   level:         number
   rank_title:    string
   wins:          number
@@ -16,7 +18,7 @@ interface Player {
 }
 
 type Bracket = 'all' | 'beginner' | 'rising' | 'champion'
-type TimePeriod = 'alltime' | 'weekly'
+type TimePeriod = 'alltime' | 'weekly' | 'rating'
 
 const BRACKETS: { key: Bracket; label: string; emoji: string; desc: string; min: number; max: number }[] = [
   { key: 'beginner',  label: 'Beginners',    emoji: '🌱', desc: 'Level 1–2',  min: 1, max: 2 },
@@ -45,10 +47,20 @@ export default function LeaderboardPage() {
         // Fetch all-time leaderboard
         const { data } = await supabase
           .from('profiles')
-          .select('id, username, total_points, level, rank_title, wins, losses, best_streak')
+          .select('id, username, total_points, rating, level, rank_title, wins, losses, best_streak')
           .neq('rank_title', 'AI Challenger')
           .not('username', 'ilike', '%MathBot%')
           .order('total_points', { ascending: false })
+          .limit(50)
+
+        setPlayers((data as Player[]) ?? [])
+      } else if (timePeriod === 'rating') {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, username, total_points, rating, level, rank_title, wins, losses, best_streak')
+          .neq('rank_title', 'AI Challenger')
+          .not('username', 'ilike', '%MathBot%')
+          .order('rating', { ascending: false })
           .limit(50)
 
         setPlayers((data as Player[]) ?? [])
@@ -61,7 +73,7 @@ export default function LeaderboardPage() {
         // Get all profiles first (including total_points for validation)
         const { data: allProfiles } = await supabase
           .from('profiles')
-          .select('id, username, level, rank_title, wins, losses, best_streak, total_points')
+          .select('id, username, level, rank_title, wins, losses, best_streak, total_points, rating')
           .neq('rank_title', 'AI Challenger')
           .not('username', 'ilike', '%MathBot%')
 
@@ -74,7 +86,7 @@ export default function LeaderboardPage() {
         // Calculate weekly points for each player
         const { data: battles } = await supabase
           .from('battles')
-          .select('id, finished_at, winner_id')
+          .select('id, finished_at, winner_id, guest_id, bot_id')
           .eq('status', 'finished')
           .gte('finished_at', sevenDaysAgoISO)
 
@@ -98,10 +110,11 @@ export default function LeaderboardPage() {
           weeklyPoints[answer.player_id] = (weeklyPoints[answer.player_id] ?? 0) + answer.points_earned
         })
 
-        // Add 200 point winner bonus for each battle won this week
+        // Add the same mode-aware winner XP bonus used at battle finish.
         battles?.forEach(battle => {
           if (battle.winner_id) {
-            weeklyPoints[battle.winner_id] = (weeklyPoints[battle.winner_id] ?? 0) + 200
+            const mode = getRewardMode(battle)
+            weeklyPoints[battle.winner_id] = (weeklyPoints[battle.winner_id] ?? 0) + WIN_XP_BONUS[mode]
           }
         })
 
@@ -112,6 +125,7 @@ export default function LeaderboardPage() {
             id: p.id,
             username: p.username,
             total_points: weeklyPoints[p.id] ?? 0,
+            rating: p.rating ?? 1000,
             level: p.level,
             rank_title: p.rank_title,
             wins: p.wins,
@@ -142,6 +156,9 @@ export default function LeaderboardPage() {
   const filtered = bracket === 'all'
     ? players
     : players.filter(p => p.level >= activeBracket.min && p.level <= activeBracket.max)
+  const scoreLabel = timePeriod === 'rating' ? 'rating' : 'pts'
+  const scoreValue = (player: Player) =>
+    timePeriod === 'rating' ? player.rating ?? 1000 : player.total_points
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-indigo-900 flex items-center justify-center">
@@ -157,7 +174,11 @@ export default function LeaderboardPage() {
         <div className="text-center mb-6 pt-4">
           <h1 className="text-4xl font-bold text-white mb-2">🏆 Leaderboard</h1>
           <p className="text-purple-300">
-            {timePeriod === 'alltime' ? 'All-time champions' : 'This week\'s top players'}
+            {timePeriod === 'alltime'
+              ? 'All-time XP champions'
+              : timePeriod === 'rating'
+              ? 'Top PvP rating'
+              : 'This week\'s top XP players'}
           </p>
         </div>
 
@@ -182,6 +203,16 @@ export default function LeaderboardPage() {
             }`}
           >
             🔥 This Week
+          </button>
+          <button
+            onClick={() => setTimePeriod('rating')}
+            className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+              timePeriod === 'rating'
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white'
+                : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            PvP Rating
           </button>
         </div>
 
@@ -229,8 +260,8 @@ export default function LeaderboardPage() {
               <p className={`text-xs font-semibold ${levelColor(filtered[1].level)}`}>
                 Lv.{filtered[1].level}
               </p>
-              <p className="text-white font-bold mt-2">{filtered[1].total_points.toLocaleString()}</p>
-              <p className="text-purple-300 text-xs">pts</p>
+              <p className="text-white font-bold mt-2">{scoreValue(filtered[1]).toLocaleString()}</p>
+              <p className="text-purple-300 text-xs">{scoreLabel}</p>
             </div>
 
             {/* 1st place */}
@@ -241,9 +272,9 @@ export default function LeaderboardPage() {
                 Lv.{filtered[0].level} · {filtered[0].rank_title}
               </p>
               <p className="text-yellow-400 font-bold text-xl mt-2">
-                {filtered[0].total_points.toLocaleString()}
+                {scoreValue(filtered[0]).toLocaleString()}
               </p>
-              <p className="text-yellow-300 text-xs">pts</p>
+              <p className="text-yellow-300 text-xs">{scoreLabel}</p>
             </div>
 
             {/* 3rd place */}
@@ -264,8 +295,8 @@ export default function LeaderboardPage() {
               <p className={`text-xs font-semibold ${levelColor(filtered[2].level)}`}>
                 Lv.{filtered[2].level}
               </p>
-              <p className="text-white font-bold mt-2">{filtered[2].total_points.toLocaleString()}</p>
-              <p className="text-purple-300 text-xs">pts</p>
+              <p className="text-white font-bold mt-2">{scoreValue(filtered[2]).toLocaleString()}</p>
+              <p className="text-purple-300 text-xs">{scoreLabel}</p>
             </div>
           </div>
         )}
@@ -324,8 +355,8 @@ export default function LeaderboardPage() {
 
                   {/* Points */}
                   <div className="text-right">
-                    <p className="text-white font-bold">{player.total_points.toLocaleString()}</p>
-                    <p className="text-purple-300 text-xs">pts</p>
+                    <p className="text-white font-bold">{scoreValue(player).toLocaleString()}</p>
+                    <p className="text-purple-300 text-xs">{scoreLabel}</p>
                   </div>
                 </div>
               </Link>

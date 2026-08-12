@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { RewardCard } from '@/components/cards/RewardCard'
+import { GameNotice } from '@/components/battle/GameNotice'
 
 export interface InventoryItem {
   id: string
@@ -42,6 +43,7 @@ export function CardStakeSelector({
   const [staked,    setStaked]    = useState(false)
   const [loading,   setLoading]   = useState(false)
   const [show,      setShow]      = useState(false)
+  const [error,     setError]     = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -62,27 +64,43 @@ export function CardStakeSelector({
   async function stakeCard() {
     if (!selected) return
     setLoading(true)
+    setError(null)
 
     const res = await fetch(`/api/battles/${battleId}/stake`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ inventory_id: selected.id }),
-    })
+    }).catch(() => null)
+
+    if (!res) {
+      setError('Connection issue. Try staking again.')
+      setLoading(false)
+      return
+    }
 
     if (res.ok) {
       setStaked(true)
       setShow(false)
       onStaked(selected)
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setError(String(data.error ?? 'Could not stake this card.'))
     }
     setLoading(false)
   }
 
   async function unstakeCard() {
     setLoading(true)
-    await fetch(`/api/battles/${battleId}/stake`, { method: 'DELETE' })
-    setStaked(false)
-    setSelected(null)
-    onStaked(null)
+    setError(null)
+    const res = await fetch(`/api/battles/${battleId}/stake`, { method: 'DELETE' }).catch(() => null)
+    if (res?.ok) {
+      setStaked(false)
+      setSelected(null)
+      onStaked(null)
+    } else {
+      const data = res ? await res.json().catch(() => ({})) : {}
+      setError(String(data.error ?? 'Could not remove this stake.'))
+    }
     setLoading(false)
   }
 
@@ -120,6 +138,12 @@ export function CardStakeSelector({
                          'Optional'}
         </span>
       </div>
+
+      {error && (
+        <div className="mb-4">
+          <GameNotice kind="error">{error}</GameNotice>
+        </div>
+      )}
 
       {/* Duel layout: [Your Stake] [VS] [Opponent's Stake] */}
       <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-start">

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { DEFAULT_RATING, calculateBattleRewards, getRewardMode } from '@/lib/game/scoring'
 
 export async function POST(
   request: Request,
@@ -44,16 +45,19 @@ export async function POST(
   // Tally scores from answers
   const { data: answers } = await adminSupabase
     .from('battle_answers')
-    .select('player_id, points_earned')
+    .select('player_id, points_earned, flagged')
     .eq('battle_id', id)
 
   const totals: Record<string, number> = {}
+  const flaggedTotals: Record<string, number> = {}
   const answerCounts: Record<string, number> = {}
   for (const a of (answers ?? [])) {
     totals[a.player_id] = (totals[a.player_id] ?? 0) + a.points_earned
+    flaggedTotals[a.player_id] = (flaggedTotals[a.player_id] ?? 0) + (a.flagged ? a.points_earned : 0)
     answerCounts[a.player_id] = (answerCounts[a.player_id] ?? 0) + 1
   }
 
+  const rewardMode = getRewardMode(battle)
   const participantIds = [battle.host_id, battle.guest_id].filter(Boolean) as string[]
   const incompletePlayer = participantIds.find(playerId =>
     (answerCounts[playerId] ?? 0) < battle.question_count
@@ -68,11 +72,13 @@ export async function POST(
 
   const hostScore  = totals[battle.host_id]  ?? 0
   const guestScore = totals[battle.guest_id] ?? 0
-  const winnerId   = hostScore > guestScore
-    ? battle.host_id
-    : guestScore > hostScore
-    ? battle.guest_id
-    : null // draw
+  const winnerId   = rewardMode === 'practice'
+    ? null
+    : hostScore > guestScore
+      ? battle.host_id
+      : guestScore > hostScore
+        ? battle.guest_id
+        : null // draw
 
   // Atomic conditional update: only proceeds if battle is still 'active'.
   // Two concurrent finish calls can both read status='active' above, but only one
@@ -138,18 +144,47 @@ export async function POST(
     }
   }
 
-  // Update profiles for both players
-  const playerIds = participantIds
-  for (const playerId of playerIds) {
-    const isWinner = playerId === winnerId
-    const isDraw   = winnerId === null
+  const playerIds = participantIds.filter(playerId => playerId !== battle.bot_id)
+  const ratingByPlayer: Record<string, number> = {}
 
-    const earnedPoints = (totals[playerId] ?? 0) + (isWinner ? 200 : 0)
+  if (rewardMode === 'pvp' && playerIds.length === 2) {
+    const { data: profiles, error: profileError } = await adminSupabase
+      .from('profiles')
+      .select('id, rating')
+      .in('id', playerIds)
+
+    if (profileError) {
+      return NextResponse.json({ error: `Failed to load player ratings: ${profileError.message}` }, { status: 500 })
+    }
+
+    for (const profile of (profiles ?? [])) {
+      ratingByPlayer[profile.id] = profile.rating ?? DEFAULT_RATING
+    }
+  }
+
+  // Update real player profiles with XP, spendable coins, match records, and PvP rating.
+  for (const playerId of playerIds) {
+    const opponentId = playerIds.find(id => id !== playerId)
+    const isWinner = rewardMode !== 'practice' && playerId === winnerId
+    const isDraw   = rewardMode !== 'practice' && winnerId === null
+    const answerXp = Math.max(0, (totals[playerId] ?? 0) - (flaggedTotals[playerId] ?? 0))
+    const rewards = calculateBattleRewards({
+      mode:           rewardMode,
+      answerXp,
+      isWinner,
+      isDraw,
+      ownRating:      ratingByPlayer[playerId] ?? DEFAULT_RATING,
+      opponentRating: opponentId ? ratingByPlayer[opponentId] ?? DEFAULT_RATING : DEFAULT_RATING,
+    })
+
     const { error: updateError } = await adminSupabase.rpc('apply_profile_battle_result', {
-      p_profile_id:    playerId,
-      p_earned_points: earnedPoints,
-      p_is_winner:     isWinner,
-      p_is_draw:       isDraw,
+      p_profile_id:     playerId,
+      p_earned_xp:      rewards.xpEarned,
+      p_earned_coins:   rewards.coinsEarned,
+      p_is_winner:      isWinner,
+      p_is_draw:        isDraw,
+      p_record_match:   rewardMode !== 'practice',
+      p_rating_delta:   rewards.ratingDelta,
     })
 
     if (updateError) {

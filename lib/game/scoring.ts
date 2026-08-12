@@ -1,17 +1,34 @@
 import type { Difficulty } from './questions'
 
-export const DIFFICULTY_MULTIPLIER: Record<Difficulty, number> = {
-  easy:   1.0,
-  medium: 1.5,
-  hard:   2.0,
+export type RewardMode = 'practice' | 'bot' | 'pvp'
+
+export const DIFFICULTY_BASE_POINTS: Record<Difficulty, number> = {
+  easy:   80,
+  medium: 120,
+  hard:   180,
 }
 
-export const BASE_POINTS = 100
-const MAX_SPEED_BONUS   = 50
-const FIRST_ANSWER_BONUS = 30
-const WIN_BONUS         = 200
-const STREAK_BONUS      = 30
-const STREAK_THRESHOLD  = 3
+export const DIFFICULTY_SPEED_BONUS: Record<Difficulty, number> = {
+  easy:   15,
+  medium: 25,
+  hard:   35,
+}
+
+export const MODE_COIN_RATE: Record<RewardMode, number> = {
+  practice: 0.25,
+  bot:      0.5,
+  pvp:      1,
+}
+
+export const WIN_XP_BONUS: Record<RewardMode, number> = {
+  practice: 0,
+  bot:      75,
+  pvp:      150,
+}
+
+export const FIRST_ANSWER_BONUS = 20
+export const DEFAULT_RATING = 1000
+const RATING_K_FACTOR = 32
 
 interface ScoreParams {
   difficulty: Difficulty
@@ -22,8 +39,42 @@ interface ScoreParams {
   currentStreak: number
 }
 
-export function calculatePoints(params: ScoreParams): number {
-  if (!params.isCorrect) return 0
+export type ScoreBreakdown = {
+  total: number
+  base: number
+  speedBonus: number
+  firstAnswerBonus: number
+  streakBonus: number
+  nextStreak: number
+}
+
+export type BattleRewardParams = {
+  mode: RewardMode
+  answerXp: number
+  isWinner: boolean
+  isDraw: boolean
+  ownRating?: number | null
+  opponentRating?: number | null
+}
+
+export type BattleRewards = {
+  xpEarned: number
+  coinsEarned: number
+  winBonusXp: number
+  ratingDelta: number
+}
+
+export function calculateScoreBreakdown(params: ScoreParams): ScoreBreakdown {
+  if (!params.isCorrect) {
+    return {
+      total:            0,
+      base:             0,
+      speedBonus:       0,
+      firstAnswerBonus: 0,
+      streakBonus:      0,
+      nextStreak:       0,
+    }
+  }
 
   const {
     difficulty,
@@ -33,32 +84,72 @@ export function calculatePoints(params: ScoreParams): number {
     currentStreak,
   } = params
 
-  const multiplier    = DIFFICULTY_MULTIPLIER[difficulty]
-  const timeLimitMs   = timeLimitSecs * 1000
+  const timeLimitMs = Math.max(1, timeLimitSecs * 1000)
   const boundedTimeTaken = Math.max(0, timeTakenMs)
-  const timeRemaining = Math.min(timeLimitMs, Math.max(0, timeLimitMs - boundedTimeTaken))
+  const timeRatio = Math.min(1, Math.max(0, boundedTimeTaken / timeLimitMs))
+  const remainingRatio = 1 - timeRatio
 
-  // Decay formula: max_speed_bonus × (time_remaining / time_total)
-  // Clamp to ensure bonus is never negative (late answers should just get base points)
-  const speedBonus = Math.max(0, Math.round(MAX_SPEED_BONUS * (timeRemaining / timeLimitMs)))
+  // Speed helps close races, but it should not dominate accuracy or difficulty.
+  const speedBonus = Math.round(DIFFICULTY_SPEED_BONUS[difficulty] * remainingRatio * remainingRatio)
+  const firstAnswerBonus = isFirstAnswer ? FIRST_ANSWER_BONUS : 0
+  const nextStreak = currentStreak + 1
+  const streakBonus = calculateStreakBonus(nextStreak)
+  const base = DIFFICULTY_BASE_POINTS[difficulty]
 
-  // First answer bonus (realtime mode only)
-  const firstBonus = isFirstAnswer ? FIRST_ANSWER_BONUS : 0
-
-  // Streak bonus
-  const streakBonus =
-    currentStreak >= STREAK_THRESHOLD ? STREAK_BONUS : 0
-
-  const total = Math.round(BASE_POINTS * multiplier) + speedBonus + firstBonus + streakBonus
-
-  return total
+  return {
+    total: base + speedBonus + firstAnswerBonus + streakBonus,
+    base,
+    speedBonus,
+    firstAnswerBonus,
+    streakBonus,
+    nextStreak,
+  }
 }
 
-export function calculateWinBonus(): number {
-  return WIN_BONUS
+export function calculatePoints(params: ScoreParams): number {
+  return calculateScoreBreakdown(params).total
 }
 
-// Level + rank computed from total_points
+export function calculateStreakBonus(nextStreak: number): number {
+  if (nextStreak >= 8) return 35
+  if (nextStreak >= 5) return 20
+  if (nextStreak >= 3) return 10
+  return 0
+}
+
+export function calculateBattleRewards(params: BattleRewardParams): BattleRewards {
+  const answerXp = Math.max(0, Math.round(params.answerXp))
+  const winBonusXp = params.isWinner ? WIN_XP_BONUS[params.mode] : 0
+  const xpEarned = answerXp + winBonusXp
+  const coinsEarned = Math.max(0, Math.round(xpEarned * MODE_COIN_RATE[params.mode]))
+  const ratingDelta = calculateRatingDelta(params)
+
+  return {
+    xpEarned,
+    coinsEarned,
+    winBonusXp,
+    ratingDelta,
+  }
+}
+
+export function calculateRatingDelta(params: BattleRewardParams): number {
+  if (params.mode !== 'pvp') return 0
+
+  const ownRating = params.ownRating ?? DEFAULT_RATING
+  const opponentRating = params.opponentRating ?? DEFAULT_RATING
+  const actualScore = params.isDraw ? 0.5 : params.isWinner ? 1 : 0
+  const expectedScore = 1 / (1 + Math.pow(10, (opponentRating - ownRating) / 400))
+
+  return Math.round(RATING_K_FACTOR * (actualScore - expectedScore))
+}
+
+export function getRewardMode(battle: { guest_id?: string | null; bot_id?: string | null }): RewardMode {
+  if (!battle.guest_id) return 'practice'
+  if (battle.bot_id) return 'bot'
+  return 'pvp'
+}
+
+// Level + rank computed from total_points, which now represents lifetime XP.
 const LEVEL_THRESHOLDS: { min: number; level: number; title: string }[] = [
   { min:      0, level: 1, title: 'Math Rookie'    },
   { min:    500, level: 2, title: 'Number Cruncher' },
@@ -85,8 +176,8 @@ export function isFlagged(
   timeLimitSecs: number
 ): boolean {
   const timeLimitMs = timeLimitSecs * 1000
-  if (serverMs > timeLimitMs + 500)  return true  // Too late
-  if (clientMs < serverMs - 2000)    return true  // Client claims faster than server
-  if (serverMs < 200)                return true  // Sub-200ms is implausible
+  if (serverMs > timeLimitMs + 500) return true
+  if (clientMs < serverMs - 2000) return true
+  if (serverMs < 200) return true
   return false
 }

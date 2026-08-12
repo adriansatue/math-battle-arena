@@ -33,13 +33,15 @@ export function useBattleChannel({
   const channelRef    = useRef<RealtimeChannel | null>(null)
   const onEventRef    = useRef(onEvent)
   const onPresenceRef = useRef(onPresence)
-  const subscribeRef  = useRef<() => void>(() => {})
+  const subscribeRef  = useRef<() => RealtimeChannel | null>(() => null)
 
   // Keep refs up to date without triggering re-renders
   useEffect(() => { onEventRef.current    = onEvent    }, [onEvent])
   useEffect(() => { onPresenceRef.current = onPresence }, [onPresence])
 
   const subscribe = useCallback(() => {
+    if (!battleId || !userId) return null
+
     const supabase = createClient()
 
     const channel = supabase.channel(`battle:${battleId}`, {
@@ -104,7 +106,7 @@ export function useBattleChannel({
   // Subscribe on mount, cleanup on unmount
   useEffect(() => {
     const channel = subscribe()
-    return () => { channel.unsubscribe() }
+    return () => { channel?.unsubscribe() }
   }, [subscribe])
 
   // Broadcast helper for sending events to opponent

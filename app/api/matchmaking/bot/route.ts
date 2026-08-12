@@ -120,7 +120,7 @@ export async function POST(request: Request) {
   const questions = generateQuestions(difficulty as Difficulty, 10)
   const now = new Date().toISOString()
 
-  await adminSupabase
+  const { error: questionsError } = await adminSupabase
     .from('battle_questions')
     .insert(questions.map((q, i) => ({
       battle_id:      battle.id,
@@ -132,10 +132,20 @@ export async function POST(request: Request) {
       server_sent_at: now,
     })))
 
-  await adminSupabase
+  if (questionsError) {
+    console.error('[bot] question insert error:', questionsError.message)
+    return NextResponse.json({ error: 'Failed to create bot battle questions' }, { status: 500 })
+  }
+
+  const { error: updateError } = await adminSupabase
     .from('battles')
     .update({ status: 'active', started_at: now })
     .eq('id', battle.id)
+
+  if (updateError) {
+    console.error('[bot] battle activation error:', updateError.message)
+    return NextResponse.json({ error: 'Failed to activate bot battle' }, { status: 500 })
+  }
 
   return NextResponse.json({ battle_id: battle.id, bot_username: BOT_META[diff].username })
 }

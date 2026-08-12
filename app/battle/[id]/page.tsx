@@ -8,6 +8,7 @@ import { Timer }        from '@/components/battle/Timer'
 import { QuestionCard } from '@/components/battle/QuestionCard'
 import { ScoreBar }     from '@/components/battle/ScoreBar'
 import { CardStakeSelector, InventoryItem } from '@/components/battle/CardStakeSelector'
+import { GameNotice } from '@/components/battle/GameNotice'
 
 type StakedCardInfo = { name: string; rarity: 'common' | 'uncommon' | 'rare' | 'legendary'; image_url: string }
 
@@ -29,6 +30,18 @@ interface Player {
 interface LastResult {
   correct: boolean
   points:  number
+}
+
+const RESULT_DISPLAY_MS = 1200
+const MIN_RESULT_HOLD_MS = 450
+
+type BattleNotice = {
+  kind: 'info' | 'warning' | 'error'
+  message: string
+}
+
+async function readResponseJson(response: Response): Promise<Record<string, unknown>> {
+  return response.json().catch(() => ({}))
 }
 
 export default function BattlePage({ params }: { params: Promise<{ id: string }> }) {
@@ -53,6 +66,8 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [opponentFinished, setOpponentFinished] = useState(false)
   const [starting,    setStarting]    = useState(false)
   const [startError,  setStartError]  = useState<string | null>(null)
+  const [gameNotice,  setGameNotice]  = useState<BattleNotice | null>(null)
+  const [finishNotice, setFinishNotice] = useState<string | null>(null)
   const [paused,      setPaused]      = useState(false)
 
   // Synchronous guard against timer/click race (same fix as practice page)
@@ -127,6 +142,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         try {
           const finishRes = await fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
           if (finishRes.ok) {
+            setFinishNotice(null)
             await broadcast('battle:end', { battle_id: battleId })
             await new Promise(resolve => setTimeout(resolve, 100))
             router.push(`/results/${battleId}`)
@@ -134,10 +150,23 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           }
 
           if (finishRes.status === 409 && attempt < 20) {
+            setFinishNotice('Waiting for every final answer to reach the server...')
+            setTimeout(() => tryFinish(attempt + 1), 1500)
+            return
+          }
+
+          const finishData = await readResponseJson(finishRes)
+          setFinishNotice(
+            typeof finishData.error === 'string'
+              ? finishData.error
+              : 'We could not finalize this battle yet. Retrying in a moment.'
+          )
+          if (attempt < 20) {
             setTimeout(() => tryFinish(attempt + 1), 1500)
           }
         } catch (err) {
           console.error('Finish error:', err)
+          setFinishNotice('Connection hiccup while finalizing. Retrying...')
           if (attempt < 20) setTimeout(() => tryFinish(attempt + 1), 1500)
         }
       }
@@ -163,12 +192,34 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       if (!b) return
 
       if (b.status === 'active') {
-        // Battle already started (Realtime handled it), just clear the poll
+        setBattle(prev => ({ ...(prev ?? {}), ...b }))
+        setStatus('active')
+        const { data: qs } = await supabase
+          .from('battle_questions_safe')
+          .select('*')
+          .eq('battle_id', battleId)
+          .order('sequence')
+
+        if (qs && qs.length > 0) {
+          setQuestions(qs as Question[])
+          setServerSentAt(new Date().toISOString())
+        }
         clearInterval(interval)
         return
       }
 
       if (b.guest_id && b.status === 'waiting') {
+        setBattle(prev => ({ ...(prev ?? {}), ...b }))
+        setPlayers(prev => {
+          if (prev.find(p => p.userId === b.guest_id)) return prev
+          return [...prev, {
+            userId:   b.guest_id as string,
+            username: 'Opponent',
+            score:    0,
+            streak:   0,
+            online:   true,
+          }]
+        })
         // Guest joined — just update local state, host will start manually
         clearInterval(interval)
       }
@@ -332,14 +383,20 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   async function startBattle() {
     setStarting(true)
     setStartError(null)
-    const res = await fetch(`/api/battles/${battleId}/start`, { method: 'POST' })
+    setGameNotice(null)
+    const res = await fetch(`/api/battles/${battleId}/start`, { method: 'POST' }).catch(() => null)
+    if (!res) {
+      setStartError('Connection issue. Try starting again.')
+      setStarting(false)
+      return
+    }
     
     if (!res.ok) {
-      const d = await res.json()
+      const d = await readResponseJson(res)
       setStartError(
         d.error === 'bet_not_matched'
           ? '⚠️ Waiting for opponent to match your card bet first'
-          : (d.message ?? d.error ?? 'Failed to start')
+          : String(d.message ?? d.error ?? 'Failed to start')
       )
       setStarting(false)
       return
@@ -382,32 +439,48 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           ? Date.now() - new Date(serverSentAt).getTime()
           : Date.now() - sentAt,
       }),
-    })
+    }).catch(() => null)
 
-    const data = await res.json()
+    const data = res ? await readResponseJson(res) : {}
+    if (!res) {
+      setGameNotice({
+        kind:    'error',
+        message: 'Connection issue while saving your answer. We will move on with 0 points.',
+      })
+    } else if (!res.ok) {
+      setGameNotice({
+        kind:    res.status === 409 ? 'warning' : 'error',
+        message: String(data.error ?? 'Your answer could not be saved. Moving on with 0 points.'),
+      })
+    } else {
+      setGameNotice(null)
+    }
 
     // Even on API error, always advance so the game never gets stuck
-    const isCorrect   = data.is_correct ?? false
-    const pointsEarned = data.points_earned ?? 0
+    const hasServerResult = typeof data.is_correct === 'boolean'
+    const isCorrect = hasServerResult ? data.is_correct as boolean : false
+    const pointsEarned = typeof data.points_earned === 'number' ? data.points_earned : 0
+    const currentStreak = typeof data.current_streak === 'number' ? data.current_streak : 0
+    const answerValue = typeof data.correct_answer === 'number' ? data.correct_answer : null
 
-    if (data.is_correct !== undefined || !res.ok) {
-      if (data.is_correct !== undefined) {
+    if (data.is_correct !== undefined || !res || !res.ok) {
+      if (hasServerResult) {
       // Update own score locally
       setPlayers(prev => prev.map(p =>
         p.userId === userId
-          ? { ...p, score: p.score + pointsEarned, streak: data.current_streak ?? 0 }
+          ? { ...p, score: p.score + pointsEarned, streak: currentStreak }
           : p
       ))
 
       setLastResult({ correct: isCorrect, points: pointsEarned })
-      setCorrectAnswer(!isCorrect && data.correct_answer != null ? data.correct_answer : null)
+      setCorrectAnswer(!isCorrect ? answerValue : null)
 
       // Broadcast to opponent
       await broadcast('answer:result', {
         player_id:      userId,
         is_correct:     isCorrect,
         points_earned:  pointsEarned,
-        current_streak: data.current_streak ?? 0,
+        current_streak: currentStreak,
       })
 
       // If playing vs bot, trigger bot answer after a delay
@@ -436,6 +509,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       }
       }
 
+      const resultDelayMs = Math.max(MIN_RESULT_HOLD_MS, RESULT_DISPLAY_MS - (Date.now() - sentAt))
       setTimeout(() => {
         if (currentQ + 1 < questions.length) {
           const freshTimestamp = new Date().toISOString()
@@ -451,7 +525,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           broadcast('player:finished', { player_id: userId })
           setStatus('finished')
         }
-      }, 1200)
+      }, resultDelayMs)
     }
   }
 
@@ -468,7 +542,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       ? Math.max(0, Date.now() - new Date(serverSentAt).getTime())
       : (battle?.time_per_q_secs as number ?? 10) * 1000
 
-    await fetch(`/api/battles/${battleId}/answer`, {
+    const timeoutRes = await fetch(`/api/battles/${battleId}/answer`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
@@ -477,7 +551,22 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         time_taken_ms: timeTakenMs,
         timed_out:     true,
       }),
-    }).catch(err => console.error('Timeout answer error:', err))
+    }).catch(err => {
+      console.error('Timeout answer error:', err)
+      return null
+    })
+
+    if (!timeoutRes) {
+      setGameNotice({ kind: 'error', message: 'Connection issue while saving the timeout. Moving on.' })
+    } else if (!timeoutRes.ok) {
+      const data = await readResponseJson(timeoutRes)
+      setGameNotice({
+        kind:    timeoutRes.status === 409 ? 'warning' : 'error',
+        message: String(data.error ?? 'The timeout could not be saved. Moving on.'),
+      })
+    } else {
+      setGameNotice(null)
+    }
 
     await broadcast('answer:result', {
       player_id:      userId,
@@ -558,7 +647,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
             {userId === battle?.host_id as string ? (
               <div className="space-y-2">
                 {startError && (
-                  <p className="text-yellow-300 text-sm text-center animate-pulse">{startError}</p>
+                  <GameNotice kind="warning">{startError}</GameNotice>
                 )}
                 <button
                   onClick={startBattle}
@@ -643,6 +732,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         )}
 
         {/* Timer — centered */}
+        {gameNotice && (
+          <GameNotice kind={gameNotice.kind}>{gameNotice.message}</GameNotice>
+        )}
+
         <div className="flex justify-center">
           <Timer
             durationSecs={battle?.time_per_q_secs as number ?? 10}
@@ -697,6 +790,9 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
             <div className="text-5xl mb-4 animate-bounce">⏳</div>
             <h2 className="text-2xl font-bold text-white mb-2">You finished!</h2>
             <p className="text-purple-300">Waiting for opponent to finish...</p>
+            {finishNotice && (
+              <p className="mt-3 max-w-xs text-sm text-yellow-200">{finishNotice}</p>
+            )}
             <div className="flex gap-2 justify-center mt-4">
               {[0,1,2].map(i => (
                 <div key={i}

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Timer }        from '@/components/battle/Timer'
 import { QuestionCard } from '@/components/battle/QuestionCard'
 import { PackOpener }   from '@/components/cards/PackOpener'
+import { GameNotice } from '@/components/battle/GameNotice'
 import Link from 'next/link'
 
 interface Question {
@@ -37,6 +38,18 @@ interface Summary {
   points:   number
   accuracy: number
   avgMs:    number
+}
+
+const RESULT_DISPLAY_MS = 1200
+const MIN_RESULT_HOLD_MS = 450
+
+type SessionNotice = {
+  kind: 'info' | 'warning' | 'error'
+  message: string
+}
+
+async function readResponseJson(response: Response): Promise<Record<string, unknown>> {
+  return response.json().catch(() => ({}))
 }
 
 export default function PracticeSessionPage({ params }: { params: Promise<{ id: string }> }) {
@@ -78,6 +91,7 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
   const [showPack,      setShowPack]      = useState(false)
   const [packError,     setPackError]     = useState<string | null>(null)
   const [showReview,    setShowReview]    = useState(false)
+  const [sessionNotice, setSessionNotice] = useState<SessionNotice | null>(null)
   const timingsRef   = useRef<number[]>([])
   const answeredRef  = useRef(false)   // synchronous guard against timer/click race
 
@@ -119,6 +133,24 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
 
   const finishSession = useCallback((allResults: Result[]) => {
     fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
+      .then(async res => {
+        if (res.ok) {
+          setSessionNotice(null)
+          return
+        }
+
+        const data = await readResponseJson(res)
+        setSessionNotice({
+          kind:    res.status === 409 ? 'warning' : 'error',
+          message: String(data.error ?? 'Practice results could not be fully saved yet.'),
+        })
+      })
+      .catch(() => {
+        setSessionNotice({
+          kind:    'error',
+          message: 'Connection issue while saving your practice results.',
+        })
+      })
     const correct  = allResults.filter(r => r.correct).length
     const total    = allResults.length
     const pts      = allResults.reduce((s, r) => s + r.points, 0)
@@ -158,6 +190,7 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
     answeredRef.current = true
     setAnswered(true)
     setPendingAnswer(answer)
+    const submittedAt = Date.now()
 
     const timeTakenMs = serverSentAt
       ? Date.now() - new Date(serverSentAt).getTime()
@@ -174,13 +207,31 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
         time_taken_ms: timeTakenMs,
         multiplier:    POINTS_MULTIPLIER,   // server applies this for solo practice battles only
       }),
-    })
-    const data = await res.json()
+    }).catch(() => null)
+    const data = res ? await readResponseJson(res) : {}
+
+    if (!res) {
+      setSessionNotice({
+        kind:    'error',
+        message: 'Connection issue while saving your answer. Moving on with 0 points.',
+      })
+    } else if (!res.ok) {
+      setSessionNotice({
+        kind:    res.status === 409 ? 'warning' : 'error',
+        message: String(data.error ?? 'Your answer could not be saved. Moving on with 0 points.'),
+      })
+    } else {
+      setSessionNotice(null)
+    }
+
+    const isCorrect = typeof data.is_correct === 'boolean' ? data.is_correct : false
+    const pointsEarned = typeof data.points_earned === 'number' ? data.points_earned : 0
+    const correctAnswer = typeof data.correct_answer === 'number' ? data.correct_answer : undefined
 
     const result: Result = {
-      correct:       data.is_correct ?? false,
-      points:        data.points_earned ?? 0,  // server already applied multiplier
-      correctAnswer: data.correct_answer,
+      correct:       isCorrect,
+      points:        pointsEarned,  // server already applied multiplier
+      correctAnswer,
       answerGiven:   answer,
     }
 
@@ -198,6 +249,7 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
       setResults(prev => [...prev, adjustedResult])
     }
 
+    const resultDelayMs = Math.max(MIN_RESULT_HOLD_MS, RESULT_DISPLAY_MS - (Date.now() - submittedAt))
     setTimeout(() => {
       if (currentQ + 1 < questions.length) {
         setCurrentQ(prev => prev + 1)
@@ -210,7 +262,7 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
       } else {
         finishSession([...results, adjustedResult])
       }
-    }, 1200)
+    }, resultDelayMs)
   }, [answered, questions, currentQ, serverSentAt, battleId, results, finishSession, POINTS_MULTIPLIER])
 
   async function handleTimerExpire() {
@@ -236,6 +288,20 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
       }),
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
+
+    if (!res) {
+      setSessionNotice({
+        kind:    'error',
+        message: 'Connection issue while saving the timeout. Moving on.',
+      })
+    } else if (!res.ok) {
+      setSessionNotice({
+        kind:    res.status === 409 ? 'warning' : 'error',
+        message: String(data.error ?? 'The timeout could not be saved. Moving on.'),
+      })
+    } else {
+      setSessionNotice(null)
+    }
 
     const result: Result = {
       correct:       false,
@@ -273,11 +339,18 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ pack_type: packType }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setPackError(data.error); setOpening(false); return }
+    }).catch(() => null)
+
+    if (!res) {
+      setPackError('Connection issue. Try opening the pack again.')
+      setOpening(false)
+      return
+    }
+
+    const data = await readResponseJson(res)
+    if (!res.ok) { setPackError(String(data.error ?? 'Could not open this pack.')); setOpening(false); return }
     const costs = { basic: 500, rare: 2000, legendary: 5000 }
-    setPackCards(data.cards)
+    setPackCards(Array.isArray(data.cards) ? data.cards as PackCard[] : [])
     setPackBalance(prev => prev !== null ? prev - costs[packType] : null)
     setShowPack(true)
     setOpening(false)
@@ -318,6 +391,12 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
             <h1 className="text-4xl font-black text-white mb-1 tracking-tight">Practice Complete!</h1>
             <p className="text-purple-300 text-sm font-semibold">{perfLabel}</p>
           </div>
+
+          {sessionNotice && (
+            <div className="mb-4">
+              <GameNotice kind={sessionNotice.kind}>{sessionNotice.message}</GameNotice>
+            </div>
+          )}
 
           {/* Stars */}
           <div className="flex justify-center gap-2 mb-6">
@@ -523,6 +602,12 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
       </div>
 
       {/* Main content — centered column */}
+      {sessionNotice && (
+        <div className="w-full max-w-lg mx-auto px-4 mb-4">
+          <GameNotice kind={sessionNotice.kind}>{sessionNotice.message}</GameNotice>
+        </div>
+      )}
+
       <div className="flex-1 w-full max-w-lg mx-auto px-4 flex flex-col gap-4">
 
         {/* Timer row: streak · timer · question count */}

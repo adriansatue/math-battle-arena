@@ -12,6 +12,7 @@ interface Profile {
   total_points:   number
   level:          number
   rank_title:     string
+  rating:         number
   wins:           number
   losses:         number
   current_streak: number
@@ -157,8 +158,9 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
           </div>
 
           {/* Stats grid */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             {[
+              { label: 'Rating',     value: profile.rating ?? 1000,     emoji: '#' },
               { label: 'Wins',       value: profile.wins,           emoji: '🏆' },
               { label: 'Losses',     value: profile.losses,         emoji: '💪' },
               { label: 'Win Rate',   value: `${winRate}%`,          emoji: '📊' },

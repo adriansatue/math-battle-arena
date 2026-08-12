@@ -7,7 +7,9 @@ export default function Footer() {
         <p className="text-white/30 text-xs">
           © {new Date().getFullYear()} Math Battle Arena. All rights reserved.
         </p>
-        <nav className="flex items-center gap-4">
+        <nav className="flex flex-wrap items-center justify-center gap-4">
+          <Link href="/how-it-works"         className="text-white/40 hover:text-white/70 text-xs transition">How It Works</Link>
+          <span className="text-white/20 text-xs">Â·</span>
           <Link href="/legal/cookies"         className="text-white/40 hover:text-white/70 text-xs transition">Cookies Policy</Link>
           <span className="text-white/20 text-xs">·</span>
           <Link href="/legal/terms"           className="text-white/40 hover:text-white/70 text-xs transition">Terms &amp; Conditions</Link>
