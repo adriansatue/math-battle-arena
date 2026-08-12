@@ -15,315 +15,279 @@ export interface Question {
   difficulty: Difficulty
 }
 
-// ── RANDOM HELPERS ────────────────────────────
+export interface PracticeOptions {
+  timesTable?: number | number[]
+  divisor?: number | number[]
+  maxNumber?: number
+}
+
 const rand = (min: number, max: number) =>
   Math.floor(Math.random() * (max - min + 1)) + min
 
-const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b)
-const simplify = (num: number, den: number) => {
-  const g = gcd(Math.abs(num), Math.abs(den))
-  return { num: num / g, den: den / g }
+const pick = <T,>(items: T[]) => items[rand(0, items.length - 1)]
+
+const gcd = (a: number, b: number): number => b === 0 ? Math.abs(a) : gcd(b, a % b)
+
+function decimal(value: number) {
+  return Math.round(value * 10_000) / 10_000
 }
 
-// ── GENERATORS PER CATEGORY ───────────────────
-function makeAddition(): Question {
-  const a = rand(10, 99)
-  const b = rand(10, 99)
-  return {
-    question_text: `${a} + ${b}`,
-    correct_answer: a + b,
-    category: 'addition',
-    difficulty: 'easy',
-  }
-}
-
-function makeSubtraction(): Question {
-  const a = rand(20, 99)
-  const b = rand(1, a)
-  return {
-    question_text: `${a} - ${b}`,
-    correct_answer: a - b,
-    category: 'subtraction',
-    difficulty: 'easy',
-  }
-}
-
-function makeMultiplication(): Question {
-  const a = rand(2, 12)
-  const b = rand(2, 12)
-  return {
-    question_text: `${a} × ${b}`,
-    correct_answer: a * b,
-    category: 'multiplication',
-    difficulty: 'medium',
-  }
-}
-
-function makeDivision(): Question {
-  const b = rand(2, 12)
-  const result = rand(2, 12)
-  const a = b * result // guarantees whole number
-  return {
-    question_text: `${a} ÷ ${b}`,
-    correct_answer: result,
-    category: 'division',
-    difficulty: 'medium',
-  }
-}
-
-function makeOrderOfOps(): Question {
-  const a = rand(2, 9)
-  const b = rand(2, 9)
-  const c = rand(2, 9)
-  const answer = (a + b) * c
-  return {
-    question_text: `(${a} + ${b}) × ${c}`,
-    correct_answer: answer,
-    category: 'order_of_ops',
-    difficulty: 'medium',
-  }
-}
-
-function makeFraction(): Question {
-  // Only use denominators 2, 3, 4, 5 for child-friendliness
-  const denominators = [2, 3, 4, 5]
-  const den1 = denominators[rand(0, 3)]
-  const den2 = denominators[rand(0, 3)]
-  const num1 = rand(1, den1 - 1)
-  const num2 = rand(1, den2 - 1)
-
-  // Add fractions: num1/den1 + num2/den2
-  const resultNum = num1 * den2 + num2 * den1
-  const resultDen = den1 * den2
-  const simplified = simplify(resultNum, resultDen)
-
-  // Format answer as decimal rounded to 4 places
-  const answer = Math.round((simplified.num / simplified.den) * 10000) / 10000
-
-  return {
-    question_text: `${num1}/${den1} + ${num2}/${den2}`,
-    correct_answer: answer,
-    category: 'fractions',
-    difficulty: 'hard',
-  }
-}
-
-function makeNegativeMultiplication(): Question {
-  const a = rand(2, 12)
-  const b = rand(2, 12)
-  const negative = Math.random() > 0.5 ? -a : a
-  return {
-    question_text: `${negative} × ${b}`,
-    correct_answer: negative * b,
-    category: 'multiplication',
-    difficulty: 'hard',
-  }
-}
-
-// ── DIFFICULTY POOLS ──────────────────────────
-const easyGenerators   = [makeAddition, makeSubtraction]
-const mediumGenerators = [makeMultiplication, makeDivision, makeOrderOfOps]
-const hardGenerators   = [makeFraction, makeNegativeMultiplication, makeOrderOfOps]
-
-// ── MAIN GENERATOR ────────────────────────────
-export function generateQuestions(
-  difficulty: Difficulty,
-  count: number
-): Question[] {
-  const generators =
-    difficulty === 'easy'   ? easyGenerators   :
-    difficulty === 'medium' ? mediumGenerators :
-                              hardGenerators
-
+function uniqueQuestions(count: number, makeQuestion: () => Question): Question[] {
   const questions: Question[] = []
   const seen = new Set<string>()
-
   let attempts = 0
-  while (questions.length < count && attempts < count * 10) {
-    attempts++
-    const gen = generators[rand(0, generators.length - 1)]
-    const q = gen()
-    const key = q.question_text
 
-    if (!seen.has(key)) {
-      seen.add(key)
-      questions.push({ ...q, difficulty })
+  while (questions.length < count && attempts < count * 60) {
+    attempts++
+    const question = makeQuestion()
+    const canRepeat = attempts > count * 30
+
+    if (canRepeat || !seen.has(question.question_text)) {
+      seen.add(question.question_text)
+      questions.push(question)
     }
+  }
+
+  while (questions.length < count) {
+    questions.push(makeQuestion())
   }
 
   return questions
 }
 
-// ── TIME LIMITS PER DIFFICULTY ─────────────────
+function makeAddition(difficulty: Difficulty): Question {
+  const max =
+    difficulty === 'easy' ? 60 :
+    difficulty === 'medium' ? 250 :
+    1_000
+  const min = difficulty === 'hard' ? -150 : 1
+  const a = rand(min, max)
+  const b = rand(min, max)
+
+  return {
+    question_text: `${a} + ${b}`,
+    correct_answer: a + b,
+    category: 'addition',
+    difficulty,
+  }
+}
+
+function makeSubtraction(difficulty: Difficulty): Question {
+  const max =
+    difficulty === 'easy' ? 80 :
+    difficulty === 'medium' ? 300 :
+    1_000
+  const a = rand(difficulty === 'hard' ? -100 : 10, max)
+  const b = rand(difficulty === 'hard' ? -100 : 1, max)
+
+  return {
+    question_text: `${a} - ${b}`,
+    correct_answer: a - b,
+    category: 'subtraction',
+    difficulty,
+  }
+}
+
+function makeMultiplication(difficulty: Difficulty, fixedTable?: number): Question {
+  const left = fixedTable ?? (
+    difficulty === 'easy' ? rand(1, 10) :
+    difficulty === 'medium' ? rand(2, 12) :
+    rand(-15, 20)
+  )
+  const right =
+    difficulty === 'easy' ? rand(1, 10) :
+    difficulty === 'medium' ? rand(2, 12) :
+    rand(-12, 20)
+
+  return {
+    question_text: `${left} x ${right}`,
+    correct_answer: left * right,
+    category: 'multiplication',
+    difficulty,
+  }
+}
+
+function makeDivision(difficulty: Difficulty, fixedDivisor?: number): Question {
+  const divisor = fixedDivisor ?? (
+    difficulty === 'easy' ? rand(1, 10) :
+    difficulty === 'medium' ? rand(2, 12) :
+    rand(2, 20)
+  )
+  const result =
+    difficulty === 'easy' ? rand(1, 10) :
+    difficulty === 'medium' ? rand(2, 15) :
+    rand(-20, 30)
+  const dividend = divisor * result
+
+  return {
+    question_text: `${dividend} / ${divisor}`,
+    correct_answer: result,
+    category: 'division',
+    difficulty,
+  }
+}
+
+function makeOrderOfOps(difficulty: Difficulty): Question {
+  const a = rand(difficulty === 'hard' ? -12 : 2, difficulty === 'easy' ? 8 : 15)
+  const b = rand(2, difficulty === 'easy' ? 8 : 15)
+  const c = rand(2, difficulty === 'easy' ? 8 : 12)
+  const pattern = pick(['grouped_multiply', 'multiply_add', 'multiply_subtract'])
+
+  if (pattern === 'grouped_multiply') {
+    return {
+      question_text: `(${a} + ${b}) x ${c}`,
+      correct_answer: (a + b) * c,
+      category: 'order_of_ops',
+      difficulty,
+    }
+  }
+
+  if (pattern === 'multiply_add') {
+    return {
+      question_text: `${a} + ${b} x ${c}`,
+      correct_answer: a + b * c,
+      category: 'order_of_ops',
+      difficulty,
+    }
+  }
+
+  return {
+    question_text: `${a} x ${b} - ${c}`,
+    correct_answer: a * b - c,
+    category: 'order_of_ops',
+    difficulty,
+  }
+}
+
+function makeFraction(difficulty: Difficulty): Question {
+  const denominators =
+    difficulty === 'easy' ? [2, 3, 4, 5] :
+    difficulty === 'medium' ? [2, 3, 4, 5, 6, 8] :
+    [2, 3, 4, 5, 6, 7, 8, 10, 12]
+  const den1 = pick(denominators)
+  const den2 = pick(denominators)
+  const num1 = rand(1, den1 - 1)
+  const num2 = rand(1, den2 - 1)
+  const operator = difficulty === 'easy' ? '+' : pick(['+', '-'])
+  const commonDen = den1 * den2
+  const rawNum = operator === '+'
+    ? num1 * den2 + num2 * den1
+    : num1 * den2 - num2 * den1
+  const divisor = gcd(rawNum, commonDen)
+
+  return {
+    question_text: `${num1}/${den1} ${operator} ${num2}/${den2}`,
+    correct_answer: decimal((rawNum / divisor) / (commonDen / divisor)),
+    category: 'fractions',
+    difficulty,
+  }
+}
+
+function makeQuestionForCategory(category: Category, difficulty: Difficulty, options: PracticeOptions = {}): Question {
+  if (category === 'addition') return makeAddition(difficulty)
+  if (category === 'subtraction') return makeSubtraction(difficulty)
+
+  if (category === 'multiplication') {
+    const tableOpt = options.timesTable
+    const tablePool = Array.isArray(tableOpt) ? tableOpt : tableOpt ? [tableOpt] : null
+    return makeMultiplication(difficulty, tablePool ? pick(tablePool) : undefined)
+  }
+
+  if (category === 'division') {
+    const divisorOpt = options.divisor
+    const divisorPool = Array.isArray(divisorOpt) ? divisorOpt : divisorOpt ? [divisorOpt] : null
+    return makeDivision(difficulty, divisorPool ? pick(divisorPool) : undefined)
+  }
+
+  if (category === 'fractions') return makeFraction(difficulty)
+  return makeOrderOfOps(difficulty)
+}
+
+export function generateQuestions(
+  difficulty: Difficulty,
+  count: number
+): Question[] {
+  const pools: Record<Difficulty, Category[]> = {
+    easy:   ['addition', 'subtraction', 'multiplication', 'division'],
+    medium: ['addition', 'subtraction', 'multiplication', 'division', 'order_of_ops', 'fractions'],
+    hard:   ['addition', 'subtraction', 'multiplication', 'division', 'order_of_ops', 'fractions'],
+  }
+
+  return uniqueQuestions(count, () => makeQuestionForCategory(pick(pools[difficulty]), difficulty))
+}
+
 export const timeLimits: Record<Difficulty, number> = {
   easy:   25,
   medium: 15,
   hard:   6,
 }
 
-// ── TARGETED GENERATORS ───────────────────────
-
-export interface PracticeOptions {
-  timesTable?: number | number[]   // one or more times tables e.g. [3, 7, 9]
-  divisor?:   number | number[]   // one or more divisors e.g. [4, 6]
-  maxNumber?: number              // max number for add/subtract e.g. 100
-}
-
 export function generateTargetedQuestions(
-  category:   Category,
+  category: Category,
   difficulty: Difficulty,
-  count:      number,
-  options:    PracticeOptions = {}
+  count: number,
+  options: PracticeOptions = {}
 ): Question[] {
-  const questions: Question[] = []
-  const seen = new Set<string>()
-  let attempts = 0
+  const safeOptions: PracticeOptions = { ...options }
 
-  // Calculate the max unique questions possible for the given options so we
-  // can allow repeats once the pool is exhausted (e.g. 1 times table = 12 unique).
-  let poolSize = Infinity
-  if (category === 'multiplication') {
-    const tableOpt  = options.timesTable
-    const tablePool = Array.isArray(tableOpt) ? tableOpt : tableOpt ? [tableOpt] : null
-    const otherRange = difficulty === 'hard' ? 11 : 12 // rand(2,12) vs rand(1,12)
-    poolSize = (tablePool ? tablePool.length : 11) * otherRange
-  } else if (category === 'division') {
-    const divisorOpt  = options.divisor
-    const divisorPool = Array.isArray(divisorOpt) ? divisorOpt : divisorOpt ? [divisorOpt] : null
-    poolSize = (divisorPool ? divisorPool.length : 11) * 12
+  if (category === 'addition' || category === 'subtraction') {
+    const max = safeOptions.maxNumber
+    if (typeof max === 'number' && Number.isFinite(max)) {
+      safeOptions.maxNumber = Math.max(10, Math.min(Math.floor(max), 1_000))
+    }
   }
 
-  while (questions.length < count && attempts < count * 30) {
-    attempts++
-    let q: Question | null = null
-
-    if (category === 'multiplication') {
-      const tableOpt = options.timesTable
-      const tablePool = Array.isArray(tableOpt) ? tableOpt : tableOpt ? [tableOpt] : null
-      const table = tablePool ? tablePool[rand(0, tablePool.length - 1)] : rand(2, 12)
-      const other = difficulty === 'hard' ? rand(2, 12) : rand(1, 12)
-      q = {
-        question_text:  `${table} × ${other}`,
-        correct_answer: table * other,
-        category:       'multiplication',
-        difficulty,
-      }
-    }
-
-    else if (category === 'division') {
-      const divisorOpt  = options.divisor
-      const divisorPool = Array.isArray(divisorOpt) ? divisorOpt : divisorOpt ? [divisorOpt] : null
-      const divisor  = divisorPool ? divisorPool[rand(0, divisorPool.length - 1)] : rand(2, 12)
-      const result   = rand(1, 12)
-      const dividend = divisor * result
-      q = {
-        question_text:  `${dividend} ÷ ${divisor}`,
-        correct_answer: result,
-        category:       'division',
-        difficulty,
-      }
-    }
-
-    else if (category === 'addition') {
-      const max = options.maxNumber ?? 100
-      const a   = rand(1, max - 1)
-      const b   = rand(1, max - a)
-      q = {
-        question_text:  `${a} + ${b}`,
+  return uniqueQuestions(count, () => {
+    if (category === 'addition' && safeOptions.maxNumber) {
+      const a = rand(1, safeOptions.maxNumber)
+      const b = rand(1, safeOptions.maxNumber)
+      return {
+        question_text: `${a} + ${b}`,
         correct_answer: a + b,
-        category:       'addition',
+        category,
         difficulty,
       }
     }
 
-    else if (category === 'subtraction') {
-      const max = options.maxNumber ?? 100
-      const a   = rand(2, max)
-      const b   = rand(1, a)
-      q = {
-        question_text:  `${a} - ${b}`,
+    if (category === 'subtraction' && safeOptions.maxNumber) {
+      const a = rand(1, safeOptions.maxNumber)
+      const b = rand(1, safeOptions.maxNumber)
+      return {
+        question_text: `${a} - ${b}`,
         correct_answer: a - b,
-        category:       'subtraction',
+        category,
         difficulty,
       }
     }
 
-    else if (category === 'fractions') {
-      q = makeFraction()
-    }
-
-    else if (category === 'order_of_ops') {
-      q = makeOrderOfOps()
-    }
-
-    if (q) {
-      // Allow repeats once the unique pool is exhausted (e.g. 30 questions on a single times table)
-      const poolExhausted = seen.size >= poolSize
-      if (poolExhausted || !seen.has(q.question_text)) {
-        seen.add(q.question_text)
-        questions.push({ ...q, difficulty })
-      }
-    }
-  }
-
-  return questions
+    return makeQuestionForCategory(category, difficulty, safeOptions)
+  })
 }
-// Generate questions for a specific category
+
 export function generateQuestionsForCategory(
   category: Category,
   difficulty: Difficulty,
   count: number
 ): Question[] {
-  const generatorMap: Record<Category, (() => Question)[]> = {
-    addition:       [makeAddition],
-    subtraction:    [makeSubtraction],
-    multiplication: difficulty === 'hard'
-      ? [makeNegativeMultiplication]
-      : [makeMultiplication],
-    division:       [makeDivision],
-    fractions:      [makeFraction],
-    order_of_ops:   [makeOrderOfOps],
-  }
-
-  const generators = generatorMap[category] ?? [makeAddition]
-  const questions: Question[] = []
-  const seen = new Set<string>()
-  let attempts = 0
-
-  while (questions.length < count && attempts < count * 20) {
-    attempts++
-    const gen = generators[rand(0, generators.length - 1)]
-    const q   = gen()
-    if (!seen.has(q.question_text)) {
-      seen.add(q.question_text)
-      questions.push({ ...q, difficulty })
-    }
-  }
-
-  return questions
+  return generateTargetedQuestions(category, difficulty, count)
 }
 
 export function generateWrongAnswers(correct: number, count: number = 3): number[] {
   const wrong = new Set<number>()
-  const ranges = [1, 2, 3, 5, 8, 10]
+  const offsets = [1, 2, 3, 5, 8, 10, 12, 15]
 
   let attempts = 0
   while (wrong.size < count && attempts < 100) {
     attempts++
-    const offset = ranges[Math.floor(Math.random() * ranges.length)]
-    const sign   = Math.random() > 0.5 ? 1 : -1
-    const candidate = correct + sign * offset
-
-    // Keep answers positive and not equal to correct
-    if (candidate !== correct && candidate > 0 && !wrong.has(candidate)) {
-      wrong.add(candidate)
+    const candidate = correct + pick(offsets) * (Math.random() > 0.5 ? 1 : -1)
+    if (candidate !== correct && !wrong.has(candidate)) {
+      wrong.add(decimal(candidate))
     }
   }
 
-  // Fallback if not enough
-  let fallback = 1
+  let fallback = correct - count
   while (wrong.size < count) {
-    if (fallback !== correct && !wrong.has(fallback)) wrong.add(fallback)
+    if (fallback !== correct) wrong.add(decimal(fallback))
     fallback++
   }
 

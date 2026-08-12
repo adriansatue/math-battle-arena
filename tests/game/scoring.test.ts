@@ -89,12 +89,16 @@ describe('calculateRatingDelta', () => {
 })
 
 describe('isFlagged', () => {
-  it('flags implausibly fast server timings', () => {
-    expect(isFlagged(120, 120, 10)).toBe(true)
+  it('does not flag fast but plausible answers', () => {
+    expect(isFlagged(120, 120, 10)).toBe(false)
+  })
+
+  it('flags implausibly instant timings', () => {
+    expect(isFlagged(50, 50, 10)).toBe(true)
   })
 
   it('flags clients claiming to be much faster than the server observed', () => {
-    expect(isFlagged(500, 3_000, 10)).toBe(true)
+    expect(isFlagged(500, 6_000, 10)).toBe(true)
   })
 
   it('does not flag normal timings', () => {

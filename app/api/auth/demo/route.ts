@@ -64,6 +64,7 @@ export async function POST() {
       wins:         0,
       losses:       0,
       best_streak:  0,
+      username_customized: false,
     })
   }
 

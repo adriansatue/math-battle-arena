@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { generateQuestions } from '@/lib/game/questions'
 import { timeLimits } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
+import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
 
 const MODES = ['realtime', 'turnbased'] as const
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid bot difficulty' }, { status: 400 })
   }
   const diff = requestedBotDifficulty as Difficulty
+  await cleanupInactiveBattles(adminSupabase)
 
   let botId: string
   try {

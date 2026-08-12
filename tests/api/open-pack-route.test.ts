@@ -25,6 +25,7 @@ describe('POST /api/rewards/open-pack', () => {
           ],
           error: null,
         },
+        { data: [], error: null },
         { data: null, error: { message: 'No rows found' } },
       ],
     }) as never)

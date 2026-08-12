@@ -164,7 +164,7 @@ export async function POST(
       ? multiplier
       : 1.0
   const pointsEarned = Math.round(rawPoints * safeMultiplier)
-  const flagged = isTimeout ? false : isFlagged(time_taken_ms, serverValidatedMs, battle.time_per_q_secs)
+  const flagged = !isTimeout && isCorrect && isFlagged(time_taken_ms, serverValidatedMs, battle.time_per_q_secs)
 
   const { error: insertError } = await adminSupabase
     .from('battle_answers')

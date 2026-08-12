@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/admin-guard'
+import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
 
 type ProfileRow = {
   id: string
@@ -113,6 +114,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const admin = createAdminClient()
+  await cleanupInactiveBattles(admin)
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
   const now = Date.now()
 

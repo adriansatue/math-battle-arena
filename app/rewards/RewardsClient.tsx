@@ -27,6 +27,7 @@ interface PackCard {
   image_url:   string
   generation?: number | null
   grade?:      number
+  is_duplicate?: boolean
 }
 
 interface Props {
@@ -42,12 +43,14 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
   const [packCards, setPackCards] = useState<PackCard[]>([])
   const [showPack,  setShowPack]  = useState(false)
   const [error,     setError]     = useState<string | null>(null)
+  const [notice,    setNotice]    = useState<string | null>(null)
   const [filter,    setFilter]    = useState<string>('all')
   const [gradeFilter, setGradeFilter] = useState<number | null>(null)
 
   async function openPack(packType: 'basic' | 'rare' | 'legendary' = 'basic') {
     setOpening(true)
     setError(null)
+    setNotice(null)
 
     const res  = await fetch('/api/rewards/open-pack', {
       method:  'POST',
@@ -63,8 +66,11 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
     }
 
     setPackCards(data.cards)
-    const costs = { basic: 500, rare: 2000, legendary: 5000 }
-    setPoints(prev => prev - costs[packType])
+    const costs = { basic: 300, rare: 900, legendary: 1800 }
+    setPoints(prev => typeof data.points_balance === 'number' ? data.points_balance : prev - costs[packType])
+    if (data.duplicate_refund > 0) {
+      setNotice(`Duplicate refund: +${data.duplicate_refund.toLocaleString()} coins`)
+    }
     setShowPack(true)
     setOpening(false)
   }
@@ -119,8 +125,8 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
           {[
             {
               type:      'basic',
-              label:     '🥉 Basic Pack',
-              cost:      500,
+              label:     'Basic Pack',
+              cost:      300,
               cards:     '3 cards',
               odds:      'Common & Uncommon',
               color:     'from-gray-500/20 to-gray-600/20',
@@ -130,8 +136,8 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
             },
             {
               type:      'rare',
-              label:     '🥈 Rare Pack',
-              cost:      2000,
+              label:     'Rare Pack',
+              cost:      900,
               cards:     '3 cards',
               odds:      '1 Rare guaranteed',
               color:     'from-blue-500/20 to-indigo-600/20',
@@ -141,8 +147,8 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
             },
             {
               type:      'legendary',
-              label:     '🥇 Legendary Pack',
-              cost:      5000,
+              label:     'Legendary Pack',
+              cost:      1800,
               cards:     '3 cards',
               odds:      '40% chance of Legendary!',
               color:     'from-yellow-500/20 to-orange-500/20',
@@ -158,10 +164,10 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className={`font-bold text-lg ${pack.textColor}`}>{pack.label}</h3>
-                  <p className="text-white/40 text-xs mt-0.5">{pack.cards} · {pack.odds}</p>
+                  <p className="text-white/40 text-xs mt-0.5">{pack.cards} - {pack.odds}</p>
                   <p className="text-white/60 text-xs mt-1">
-                    Cost: <span className="font-bold text-white">{pack.cost.toLocaleString()} pts</span>
-                    <span className="text-white/30 ml-2">· You have: {points.toLocaleString()} pts</span>
+                    Cost: <span className="font-bold text-white">{pack.cost.toLocaleString()} coins</span>
+                    <span className="text-white/30 ml-2">- You have: {points.toLocaleString()} coins</span>
                   </p>
                 </div>
                 <button
@@ -169,7 +175,7 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
                   disabled={opening || points < pack.cost}
                   className={`bg-gradient-to-r ${pack.btnColor} hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-black font-bold px-5 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg text-sm whitespace-nowrap`}
                 >
-                  {opening ? '...' : points < pack.cost ? 'Need more pts' : 'Open!'}
+                  {opening ? '...' : points < pack.cost ? 'Need coins' : 'Open!'}
                 </button>
               </div>
             </div>
@@ -177,6 +183,9 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
 
           {error && (
             <p className="text-red-400 text-sm bg-red-500/10 rounded-lg p-2">{error}</p>
+          )}
+          {notice && (
+            <p className="text-emerald-300 text-sm bg-emerald-500/10 rounded-lg p-2">{notice}</p>
           )}
         </div>
 

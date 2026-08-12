@@ -11,6 +11,7 @@ type QueryMock = QueryResult & {
   neq: ReturnType<typeof vi.fn>
   gt: ReturnType<typeof vi.fn>
   gte: ReturnType<typeof vi.fn>
+  lt: ReturnType<typeof vi.fn>
   is: ReturnType<typeof vi.fn>
   in: ReturnType<typeof vi.fn>
   not: ReturnType<typeof vi.fn>
@@ -73,6 +74,7 @@ function createQueryMock(result: QueryResult): QueryMock {
   query.neq = vi.fn(chain)
   query.gt = vi.fn(chain)
   query.gte = vi.fn(chain)
+  query.lt = vi.fn(chain)
   query.is = vi.fn(chain)
   query.in = vi.fn(chain)
   query.not = vi.fn(chain)

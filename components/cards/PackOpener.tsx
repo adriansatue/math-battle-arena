@@ -12,6 +12,7 @@ interface Card {
   image_url:   string
   generation?: number | null
   grade?:      number
+  is_duplicate?: boolean
 }
 
 interface PackOpenerProps {
@@ -186,10 +187,14 @@ function FlipCard({
         </div>
       </div>
 
-      {/* NEW sticker — outside overflow-hidden so it hangs off the corner */}
+      {/* Status sticker - outside overflow-hidden so it hangs off the corner */}
       <div className="absolute -top-3 -left-3 z-30 -rotate-12 pointer-events-none">
-        <div className="relative bg-gradient-to-br from-yellow-300 to-orange-400 text-black text-xs font-black px-2 py-1 rounded-lg shadow-lg shadow-orange-500/50 leading-none tracking-wide border border-yellow-200/60">
-          ✦ NEW
+        <div className={`relative text-xs font-black px-2 py-1 rounded-lg shadow-lg leading-none tracking-wide border ${
+          card.is_duplicate
+            ? 'bg-gradient-to-br from-slate-200 to-slate-400 text-slate-950 shadow-slate-500/40 border-white/60'
+            : 'bg-gradient-to-br from-yellow-300 to-orange-400 text-black shadow-orange-500/50 border-yellow-200/60'
+        }`}>
+          {card.is_duplicate ? 'DUPLICATE' : 'NEW'}
           <div className="absolute inset-0 rounded-lg overflow-hidden">
             <div className="absolute -left-4 top-0 h-full w-3 bg-white/40 skew-x-12 animate-[shine_2.5s_ease-in-out_infinite]" />
           </div>

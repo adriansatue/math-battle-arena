@@ -4,9 +4,79 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { timeLimits } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
 import { isUniqueViolation } from '@/lib/supabase/errors'
+import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
+import { DEFAULT_RATING } from '@/lib/game/scoring'
 
 const MODES = ['realtime', 'turnbased'] as const
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
+const MATCH_CANDIDATE_LIMIT = 20
+const MATCH_BASE_RATING_RANGE = 180
+const MATCH_MAX_RATING_RANGE = 650
+const MATCH_WIDEN_EVERY_MS = 10_000
+const MATCH_RATING_STEP = 120
+
+type QueueCandidate = {
+  id: string
+  user_id: string
+  queued_at: string | null
+}
+
+type MatchProfile = {
+  id: string
+  rating: number | null
+  level: number | null
+}
+
+function numberOrDefault(value: number | null | undefined, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function queueWaitMs(queuedAt: string | null) {
+  if (!queuedAt) return 0
+  const queuedTime = new Date(queuedAt).getTime()
+  if (!Number.isFinite(queuedTime)) return 0
+  return Math.max(0, Date.now() - queuedTime)
+}
+
+function ratingWindow(waitMs: number) {
+  const widened = MATCH_BASE_RATING_RANGE + Math.floor(waitMs / MATCH_WIDEN_EVERY_MS) * MATCH_RATING_STEP
+  return Math.min(MATCH_MAX_RATING_RANGE, widened)
+}
+
+function levelWindow(waitMs: number) {
+  return waitMs >= 30_000 ? 4 : 2
+}
+
+function pickBestOpponent(
+  candidates: QueueCandidate[],
+  profiles: MatchProfile[],
+  ownRating: number,
+  ownLevel: number
+) {
+  const profileById = new Map(profiles.map(profile => [profile.id, profile]))
+
+  return candidates
+    .map(candidate => {
+      const profile = profileById.get(candidate.user_id)
+      const candidateRating = numberOrDefault(profile?.rating, DEFAULT_RATING)
+      const candidateLevel = numberOrDefault(profile?.level, 1)
+      const waitMs = queueWaitMs(candidate.queued_at)
+      const ratingDiff = Math.abs(candidateRating - ownRating)
+      const levelDiff = Math.abs(candidateLevel - ownLevel)
+      const acceptable = ratingDiff <= ratingWindow(waitMs) && levelDiff <= levelWindow(waitMs)
+
+      return {
+        candidate,
+        acceptable,
+        ratingDiff,
+        levelDiff,
+        waitMs,
+        score: ratingDiff + levelDiff * 80 - waitMs / 1000,
+      }
+    })
+    .filter(match => match.acceptable)
+    .sort((a, b) => a.score - b.score)[0] ?? null
+}
 
 async function enqueueUser(
   adminSupabase: ReturnType<typeof createAdminClient>,
@@ -37,7 +107,7 @@ async function addUserToQueue(
 
   return NextResponse.json({
     matched: false,
-    message: error ? 'Already in queue' : 'Added to queue',
+    message: error ? 'Already in queue' : 'Finding a similarly rated opponent',
   })
 }
 
@@ -60,30 +130,59 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid difficulty' }, { status: 400 })
   }
 
+  await cleanupInactiveBattles(adminSupabase)
+
   await adminSupabase
     .from('matchmaking_queue')
     .delete()
     .eq('user_id', user.id)
 
-  const { data: opponent } = await adminSupabase
+  const { data: profile } = await adminSupabase
+    .from('profiles')
+    .select('rating, level')
+    .eq('id', user.id)
+    .single()
+
+  const ownRating = numberOrDefault(profile?.rating, DEFAULT_RATING)
+  const ownLevel = numberOrDefault(profile?.level, 1)
+
+  const { data: candidates } = await adminSupabase
     .from('matchmaking_queue')
-    .select('*')
+    .select('id, user_id, queued_at')
     .eq('mode', mode)
     .eq('difficulty', difficulty)
     .neq('user_id', user.id)
     .order('queued_at', { ascending: true })
-    .limit(1)
-    .single()
+    .limit(MATCH_CANDIDATE_LIMIT)
 
-  if (!opponent) {
+  if (!candidates || candidates.length === 0) {
     return addUserToQueue(adminSupabase, user.id, mode, difficulty)
   }
 
+  const candidateRows = candidates as QueueCandidate[]
+  const candidateIds = candidateRows.map(candidate => candidate.user_id)
+  const { data: candidateProfiles } = await adminSupabase
+    .from('profiles')
+    .select('id, rating, level')
+    .in('id', candidateIds)
+
+  const match = pickBestOpponent(
+    candidateRows,
+    (candidateProfiles ?? []) as MatchProfile[],
+    ownRating,
+    ownLevel
+  )
+
+  if (!match) {
+    return addUserToQueue(adminSupabase, user.id, mode, difficulty)
+  }
+
+  const opponent = match.candidate
   const { data: claimedOpponent } = await adminSupabase
     .from('matchmaking_queue')
     .delete()
     .eq('id', opponent.id)
-    .select('id')
+    .select('id, user_id')
     .single()
 
   if (!claimedOpponent) {
@@ -146,6 +245,11 @@ export async function POST(request: Request) {
     battle_id:  battle.id,
     mode:       battle.mode,
     difficulty: battle.difficulty,
+    match_quality: {
+      rating_diff: Math.round(match.ratingDiff),
+      level_diff:  match.levelDiff,
+      wait_ms:     Math.round(match.waitMs),
+    },
   })
 }
 
@@ -157,6 +261,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const thirtySecondsAgo = new Date(Date.now() - 30 * 1000).toISOString()
+  await cleanupInactiveBattles(adminSupabase)
 
   const { data: hostBattle } = await adminSupabase
     .from('battles')

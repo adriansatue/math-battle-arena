@@ -176,8 +176,8 @@ export function isFlagged(
   timeLimitSecs: number
 ): boolean {
   const timeLimitMs = timeLimitSecs * 1000
-  if (serverMs > timeLimitMs + 500) return true
-  if (clientMs < serverMs - 2000) return true
-  if (serverMs < 200) return true
+  if (serverMs > timeLimitMs + 2_000) return true
+  if (clientMs < serverMs - 5_000) return true
+  if (clientMs < 100 && serverMs < 100) return true
   return false
 }

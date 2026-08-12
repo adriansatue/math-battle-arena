@@ -1,50 +1,116 @@
-﻿'use client'
+'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
-type Mode       = 'realtime' | 'turnbased'
+type Mode = 'realtime' | 'turnbased'
 type Difficulty = 'easy' | 'medium' | 'hard'
+
+type PlayerSnapshot = {
+  username: string | null
+  level: number | null
+  rank_title: string | null
+  rating: number | null
+  total_points: number | null
+  points_balance: number | null
+}
+
+type IconProps = {
+  className?: string
+}
+
+const BOT_FALLBACK_SECONDS = 25
+const DIFFICULTIES: Record<Difficulty, {
+  label: string
+  time: string
+  detail: string
+  accent: string
+}> = {
+  easy: {
+    label:  'Easy',
+    time:   '25s',
+    detail: 'Warm-up pace',
+    accent: 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100',
+  },
+  medium: {
+    label:  'Medium',
+    time:   '15s',
+    detail: 'Balanced race',
+    accent: 'border-amber-300/40 bg-amber-400/15 text-amber-100',
+  },
+  hard: {
+    label:  'Hard',
+    time:   '6s',
+    detail: 'Fast answers',
+    accent: 'border-rose-300/40 bg-rose-400/15 text-rose-100',
+  },
+}
+
+function formatNumber(value: number | null | undefined) {
+  return (value ?? 0).toLocaleString()
+}
+
+function formatTime(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
 
 export default function LobbyPage() {
   const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
 
-  // Friend panel: null = hidden, 'create' = create battle, 'join' = join by code
+  const mode = 'realtime' as Mode
+  const queueMode = 'realtime' as Mode
+  const questions = 10
+
+  const [profile, setProfile] = useState<PlayerSnapshot | null>(null)
   const [friendPanel, setFriendPanel] = useState<null | 'create' | 'join'>(null)
-
-  // Create battle
-  const mode                          = 'realtime' as Mode
-  const [difficulty,  setDifficulty]  = useState<Difficulty>('medium')
-  const questions                     = 10
-  const [creating,    setCreating]    = useState(false)
-  const [inviteCode,  setInviteCode]  = useState<string | null>(null)
-  const [battleId,    setBattleId]    = useState<string | null>(null)
-
-  // Join by code
-  const [joinCode,    setJoinCode]    = useState('')
-  const [joining,     setJoining]     = useState(false)
-
-  // Random matchmaking
-  const queueMode                     = 'realtime' as Mode
-  const [queueDiff,   setQueueDiff]   = useState<Difficulty>('medium')
-  const [inQueue,     setInQueue]     = useState(false)
-  const [queueTime,   setQueueTime]   = useState(0)
-  const queueTimeRef = useRef(0)
-  const queueInterval                 = useRef<NodeJS.Timeout | null>(null)
-  const pollInterval                  = useRef<NodeJS.Timeout | null>(null)
-
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium')
+  const [queueDiff, setQueueDiff] = useState<Difficulty>('medium')
+  const [creating, setCreating] = useState(false)
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
+  const [battleId, setBattleId] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [joinCode, setJoinCode] = useState('')
+  const [joining, setJoining] = useState(false)
+  const [inQueue, setInQueue] = useState(false)
+  const [queueTime, setQueueTime] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
-  // Cleanup on unmount
+  const queueTimeRef = useRef(0)
+  const queueInterval = useRef<NodeJS.Timeout | null>(null)
+  const pollInterval = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadProfile() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || cancelled) return
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('username, level, rank_title, rating, total_points, points_balance')
+        .eq('id', user.id)
+        .single()
+
+      if (!cancelled) setProfile(data as PlayerSnapshot | null)
+    }
+
+    loadProfile()
+    return () => {
+      cancelled = true
+    }
+  }, [supabase])
+
   useEffect(() => {
     return () => {
       if (queueInterval.current) clearInterval(queueInterval.current)
-      if (pollInterval.current)  clearInterval(pollInterval.current)
+      if (pollInterval.current) clearInterval(pollInterval.current)
     }
   }, [])
 
-  // Remove user from matchmaking queue if tab is closed mid-queue
   useEffect(() => {
     const handleUnload = () => {
       void fetch('/api/matchmaking/queue', { method: 'DELETE', keepalive: true })
@@ -53,19 +119,30 @@ export default function LobbyPage() {
     return () => window.removeEventListener('beforeunload', handleUnload)
   }, [])
 
-  // ── CREATE BATTLE ─────────────────────────────────
+  function stopQueueTimers() {
+    if (queueInterval.current) clearInterval(queueInterval.current)
+    if (pollInterval.current) clearInterval(pollInterval.current)
+    queueInterval.current = null
+    pollInterval.current = null
+  }
+
   async function createBattle() {
     setCreating(true)
     setError(null)
+    setCopied(false)
 
-    const res  = await fetch('/api/battles', {
+    const res = await fetch('/api/battles', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ mode, difficulty, question_count: questions }),
     })
     const data = await res.json()
 
-    if (!res.ok) { setError(data.error); setCreating(false); return }
+    if (!res.ok) {
+      setError(data.error)
+      setCreating(false)
+      return
+    }
 
     setInviteCode(data.battle.invite_code)
     setBattleId(data.battle.id)
@@ -76,28 +153,38 @@ export default function LobbyPage() {
     if (battleId) router.push(`/battle/${battleId}`)
   }
 
-  // ── JOIN BY CODE ───────────────────────────────────
+  async function copyInviteCode() {
+    if (!inviteCode) return
+    await navigator.clipboard.writeText(inviteCode)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
+
   async function joinByCode() {
-    if (!joinCode.trim()) return
+    if (joinCode.length < 6) return
     setJoining(true)
     setError(null)
 
-    const res  = await fetch('/api/battles/join', {
+    const res = await fetch('/api/battles/join', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ invite_code: joinCode }),
     })
     const data = await res.json()
 
-    if (!res.ok) { setError(data.error); setJoining(false); return }
+    if (!res.ok) {
+      setError(data.error)
+      setJoining(false)
+      return
+    }
 
     router.push(`/battle/${data.battle_id}`)
   }
 
-  // ── RANDOM MATCHMAKING ────────────────────────────
   async function joinQueue() {
     setInQueue(true)
     setQueueTime(0)
+    queueTimeRef.current = 0
     setError(null)
 
     queueInterval.current = setInterval(() => {
@@ -107,30 +194,31 @@ export default function LobbyPage() {
       })
     }, 1000)
 
-    // Enter queue once
-    const res  = await fetch('/api/matchmaking/queue', {
+    const res = await fetch('/api/matchmaking/queue', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ mode: queueMode, difficulty: queueDiff }),
     })
     const data = await res.json()
 
-    if (!res.ok) { setError(data.error); leaveQueue(); return }
+    if (!res.ok) {
+      setError(data.error)
+      await leaveQueue()
+      return
+    }
 
     if (data.matched) {
-      leaveQueue()
+      await leaveQueue()
       router.push(`/battle/${data.battle_id}`)
       return
     }
 
-    // Poll for match every 2s
     pollInterval.current = setInterval(async () => {
-      if (queueTimeRef.current >= 15) {
-        clearInterval(pollInterval.current!)
-        clearInterval(queueInterval.current!)
+      if (queueTimeRef.current >= BOT_FALLBACK_SECONDS) {
+        stopQueueTimers()
 
         try {
-          const botRes  = await fetch('/api/matchmaking/bot', {
+          const botRes = await fetch('/api/matchmaking/bot', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
@@ -148,226 +236,446 @@ export default function LobbyPage() {
             setError(botData.error ?? 'Failed to start bot battle')
             setInQueue(false)
             setQueueTime(0)
+            queueTimeRef.current = 0
           }
         } catch (err) {
           console.error('[joinQueue] bot fallback error:', err)
           setError('Failed to start bot battle')
           setInQueue(false)
           setQueueTime(0)
+          queueTimeRef.current = 0
         }
         return
       }
 
-      // Check for real player match
-      const checkRes  = await fetch('/api/matchmaking/queue')
+      const checkRes = await fetch('/api/matchmaking/queue')
       const checkData = await checkRes.json()
 
       if (checkData.matched) {
-        leaveQueue()
+        await leaveQueue()
         router.push(`/battle/${checkData.battle_id}`)
       }
     }, 2000)
   }
 
   async function leaveQueue() {
-    if (queueInterval.current) clearInterval(queueInterval.current)
-    if (pollInterval.current)  clearInterval(pollInterval.current)
+    stopQueueTimers()
     setInQueue(false)
     setQueueTime(0)
+    queueTimeRef.current = 0
     try {
       await fetch('/api/matchmaking/queue', { method: 'DELETE' })
     } catch {
-      // Best-effort cleanup — ignore errors
+      // Best-effort cleanup.
     }
   }
 
-  const formatTime = (s: number) =>
-    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  const queueProgress = Math.min(100, (queueTime / BOT_FALLBACK_SECONDS) * 100)
+  const selectedQueueDifficulty = DIFFICULTIES[queueDiff]
+  const selectedFriendDifficulty = DIFFICULTIES[difficulty]
 
-
-
-  // ── RENDER ────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 p-4 pb-8">
-      <div className="max-w-md mx-auto space-y-5 pt-8">
+    <div className="min-h-screen bg-[#090b14] px-4 pb-24 pt-5 text-white sm:pb-10">
+      <div className="mx-auto grid w-full max-w-6xl gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
+        <header className="lg:col-span-2">
+          <div className="flex flex-col gap-4 rounded-lg border border-white/10 bg-white/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Lobby</p>
+              <h1 className="mt-1 text-3xl font-black tracking-tight sm:text-4xl">Choose Your Match</h1>
+              <p className="mt-1 text-sm text-white/50">Play a fair battle, invite a friend, or train before the next round.</p>
+            </div>
 
-        {/* Header */}
-        <div className="text-center space-y-1">
-          <h1 className="text-4xl font-black text-white">⚔️ Math Battle</h1>
-          <p className="text-purple-300 text-sm">Choose how you want to play</p>
-        </div>
+            <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
+              <PlayerMetric label="Level" value={formatNumber(profile?.level ?? 1)} />
+              <PlayerMetric label="Rating" value={formatNumber(profile?.rating ?? 1000)} />
+              <PlayerMetric label="Coins" value={formatNumber(profile?.points_balance ?? profile?.total_points ?? 0)} />
+            </div>
+          </div>
+        </header>
 
         {error && (
-          <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-3 text-red-300 text-sm text-center">
+          <div className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100 lg:col-span-2">
             {error}
           </div>
         )}
 
-        {/* ── QUICK BATTLE (primary CTA) ── */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/10 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">⚡</span>
-            <h2 className="text-white font-bold text-lg">Quick Battle</h2>
-            <span className="text-white/40 text-xs ml-auto">vs players · bot after 15s</span>
+        <section className="rounded-lg border border-cyan-300/20 bg-cyan-400/[0.07] p-5 shadow-2xl shadow-cyan-950/20">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <BoltIcon className="h-5 w-5 text-cyan-200" />
+                <h2 className="text-xl font-black">Quick Battle</h2>
+              </div>
+              <p className="mt-1 text-sm text-white/55">
+                Fair matchmaking first. Bot fallback after {BOT_FALLBACK_SECONDS}s.
+              </p>
+            </div>
+            <span className={`rounded-lg border px-3 py-1 text-xs font-bold ${selectedQueueDifficulty.accent}`}>
+              {selectedQueueDifficulty.time}
+            </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {(['easy', 'medium', 'hard'] as Difficulty[]).map(d => (
-              <button key={d} onClick={() => setQueueDiff(d)}
-                className={`py-2 rounded-xl font-semibold text-sm transition-all ${
-                  queueDiff === d
-                    ? 'bg-purple-600 text-white shadow-lg'
-                    : 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white'
-                }`}>
-                {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Medium' : '🚀 Hard'}
-              </button>
-            ))}
+          <div className="mt-5 grid gap-2 sm:grid-cols-3">
+            {(Object.keys(DIFFICULTIES) as Difficulty[]).map(diff => {
+              const option = DIFFICULTIES[diff]
+              const selected = queueDiff === diff
+              return (
+                <button
+                  key={diff}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setQueueDiff(diff)}
+                  disabled={inQueue}
+                  className={`rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    selected
+                      ? option.accent
+                      : 'border-white/10 bg-white/[0.04] text-white/60 hover:border-white/20 hover:bg-white/[0.07]'
+                  }`}
+                >
+                  <span className="block text-sm font-black">{option.label}</span>
+                  <span className="mt-0.5 block text-xs opacity-70">{option.detail}</span>
+                </button>
+              )
+            })}
           </div>
 
           {inQueue ? (
-            <div className="text-center space-y-3 py-2">
-              <div className="flex items-center justify-center gap-3">
-                <div className="flex gap-1">
-                  {[0,1,2].map(i => (
-                    <div key={i} className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"
-                      style={{ animationDelay: `${i * 0.15}s` }}/>
-                  ))}
+            <div className="mt-5 rounded-lg border border-white/10 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="relative h-9 w-9 rounded-full border border-cyan-300/30 bg-cyan-300/10">
+                    <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-200" />
+                    <div className="absolute inset-1 rounded-full border border-cyan-200/30 animate-ping" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold">
+                      {queueTime >= BOT_FALLBACK_SECONDS - 3 ? 'Starting bot battle...' : 'Finding a fair opponent'}
+                    </p>
+                    <p className="text-xs text-white/45">Searching near your rating and level</p>
+                  </div>
                 </div>
-                <p className="text-white font-bold">
-                  {queueTime >= 12 ? '🤖 Starting vs AI...' : 'Finding opponent...'}
-                </p>
-                <span className="text-purple-300 font-mono text-sm">{formatTime(queueTime)}</span>
+                <span className="font-mono text-sm text-cyan-100">{formatTime(queueTime)}</span>
               </div>
-              <button onClick={leaveQueue}
-                className="text-red-400 hover:text-red-300 text-sm font-semibold transition">
-                ✕ Cancel
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-cyan-300 transition-all duration-500"
+                  style={{ width: `${queueProgress}%` }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={leaveQueue}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-red-300/25 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/20"
+              >
+                <CloseIcon className="h-4 w-4" />
+                Cancel search
               </button>
             </div>
           ) : (
-            <button onClick={joinQueue}
-              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold py-4 rounded-xl transition-all text-lg shadow-lg hover:-translate-y-0.5">
-              Find Opponent 🎲
+            <button
+              type="button"
+              onClick={joinQueue}
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 px-5 py-4 text-base font-black text-slate-950 shadow-xl shadow-cyan-950/30 transition hover:bg-cyan-200 hover:-translate-y-0.5 active:translate-y-0"
+            >
+              <BoltIcon className="h-5 w-5" />
+              Find Opponent
             </button>
           )}
-        </div>
+        </section>
 
-        {/* ── MODE CARDS ── */}
-        <div className="grid grid-cols-2 gap-3">
-
-          {/* Play a Friend – full width */}
-          <div className="col-span-2 bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">👥</span>
-              <h2 className="text-white font-bold">Play a Friend</h2>
+        <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <UsersIcon className="h-5 w-5 text-violet-200" />
+                <h2 className="text-xl font-black">Play a Friend</h2>
+              </div>
+              <p className="mt-1 text-sm text-white/50">Create a room or join with a 6-character code.</p>
             </div>
-
-            {friendPanel === null && (
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => { setFriendPanel('create'); setInviteCode(null); setBattleId(null) }}
-                  className="bg-white/10 hover:bg-white/20 text-white font-semibold py-3 rounded-xl text-sm transition">
-                  🎯 Create Game
-                </button>
-                <button onClick={() => setFriendPanel('join')}
-                  className="bg-white/10 hover:bg-white/20 text-white font-semibold py-3 rounded-xl text-sm transition">
-                  🔗 Join by Code
-                </button>
-              </div>
-            )}
-
-            {friendPanel === 'create' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  {(['easy', 'medium', 'hard'] as Difficulty[]).map(d => (
-                    <button key={d} onClick={() => setDifficulty(d)}
-                      className={`py-2 rounded-xl font-semibold text-xs transition-all ${
-                        difficulty === d ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/50 hover:bg-white/20 hover:text-white'
-                      }`}>
-                      {d === 'easy' ? '🐢 Easy' : d === 'medium' ? '🐇 Med' : '🚀 Hard'}
-                    </button>
-                  ))}
-                </div>
-                {inviteCode ? (
-                  <div className="bg-green-500/20 border border-green-500/30 rounded-xl p-3 text-center space-y-2">
-                    <p className="text-green-300 text-xs">Share this code:</p>
-                    <p className="text-white text-3xl font-bold tracking-widest">{inviteCode}</p>
-                    <div className="flex gap-2">
-                      <button onClick={() => navigator.clipboard.writeText(inviteCode)}
-                        className="flex-1 text-green-300 hover:text-white text-xs transition bg-white/10 rounded-lg py-2">
-                        📋 Copy
-                      </button>
-                      <button onClick={goToBattle}
-                        className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-2 rounded-lg text-xs transition">
-                        Enter Room ⚔️
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button onClick={() => setFriendPanel(null)}
-                      className="bg-white/10 hover:bg-white/20 text-white/60 font-semibold py-3 rounded-xl text-sm transition px-4">
-                      ←
-                    </button>
-                    <button onClick={createBattle} disabled={creating}
-                      className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition">
-                      {creating ? 'Creating...' : 'Create Battle ⚔️'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {friendPanel === 'join' && (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={joinCode}
-                  onChange={e => setJoinCode(e.target.value.toUpperCase())}
-                  placeholder="Enter code e.g. X4K9PZ"
-                  maxLength={6}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-xl font-bold text-center tracking-widest placeholder-white/20 focus:outline-none focus:border-purple-400 transition uppercase"
-                />
-                <div className="flex gap-2">
-                  <button onClick={() => setFriendPanel(null)}
-                    className="bg-white/10 hover:bg-white/20 text-white/60 font-semibold py-3 rounded-xl text-sm transition px-4">
-                    ←
-                  </button>
-                  <button onClick={joinByCode} disabled={joining || joinCode.length < 6}
-                    className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition">
-                    {joining ? 'Joining...' : 'Join Battle 🔗'}
-                  </button>
-                </div>
-              </div>
-            )}
+            <span className={`rounded-lg border px-3 py-1 text-xs font-bold ${selectedFriendDifficulty.accent}`}>
+              {selectedFriendDifficulty.label}
+            </span>
           </div>
 
-          {/* Practice – full width */}
-          <Link href="/practice"
-            className="col-span-2 bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/10 flex items-center gap-4 hover:bg-white/15 transition group">
-            <span className="text-3xl">🎯</span>
-            <div className="flex-1">
-              <h2 className="text-white font-bold">Practice Mode</h2>
-              <p className="text-white/40 text-xs mt-0.5">Solo drills — pick any topic, no pressure</p>
+          {friendPanel === null && (
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFriendPanel('create')
+                  setInviteCode(null)
+                  setBattleId(null)
+                  setCopied(false)
+                }}
+                className="rounded-lg border border-white/10 bg-white/[0.06] p-4 text-left transition hover:border-violet-300/35 hover:bg-violet-400/10"
+              >
+                <PlusIcon className="mb-3 h-5 w-5 text-violet-200" />
+                <span className="block text-sm font-black">Create Game</span>
+                <span className="mt-1 block text-xs text-white/45">Invite by code</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFriendPanel('join')}
+                className="rounded-lg border border-white/10 bg-white/[0.06] p-4 text-left transition hover:border-violet-300/35 hover:bg-violet-400/10"
+              >
+                <JoinIcon className="mb-3 h-5 w-5 text-violet-200" />
+                <span className="block text-sm font-black">Join Room</span>
+                <span className="mt-1 block text-xs text-white/45">Enter a code</span>
+              </button>
             </div>
-            <div className="bg-white/10 group-hover:bg-white/20 text-white font-bold px-5 py-3 rounded-xl text-sm transition shrink-0">
-              Start Practicing
+          )}
+
+          {friendPanel === 'create' && (
+            <div className="mt-5 space-y-4">
+              {!inviteCode && (
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.keys(DIFFICULTIES) as Difficulty[]).map(diff => {
+                    const option = DIFFICULTIES[diff]
+                    const selected = difficulty === diff
+                    return (
+                      <button
+                        key={diff}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setDifficulty(diff)}
+                        className={`rounded-lg border px-3 py-2 text-sm font-bold transition ${
+                          selected
+                            ? option.accent
+                            : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08]'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {inviteCode ? (
+                <div className="rounded-lg border border-emerald-300/25 bg-emerald-400/10 p-4 text-center">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">Room Code</p>
+                  <p className="mt-2 font-mono text-4xl font-black tracking-[0.24em] text-white">{inviteCode}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={copyInviteCode}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200/20 bg-white/10 px-3 py-3 text-sm font-bold text-emerald-50 hover:bg-white/15"
+                    >
+                      <CopyIcon className="h-4 w-4" />
+                      {copied ? 'Copied' : 'Copy'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={goToBattle}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-300 px-3 py-3 text-sm font-black text-slate-950 hover:bg-emerald-200"
+                    >
+                      <PlayIcon className="h-4 w-4" />
+                      Enter
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFriendPanel(null)}
+                    className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+                    aria-label="Back"
+                  >
+                    <BackIcon className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createBattle}
+                    disabled={creating}
+                    className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-violet-300 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    {creating ? 'Creating...' : 'Create Battle'}
+                  </button>
+                </div>
+              )}
             </div>
-          </Link>
+          )}
 
-        </div>
+          {friendPanel === 'join' && (
+            <div className="mt-5 space-y-3">
+              <input
+                type="text"
+                value={joinCode}
+                onChange={event => setJoinCode(event.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6))}
+                placeholder="X4K9PZ"
+                maxLength={6}
+                className="h-14 w-full rounded-lg border border-white/15 bg-black/20 px-4 text-center font-mono text-2xl font-black tracking-[0.22em] text-white placeholder:text-white/15 focus:border-violet-300/70 focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFriendPanel(null)}
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+                  aria-label="Back"
+                >
+                  <BackIcon className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={joinByCode}
+                  disabled={joining || joinCode.length < 6}
+                  className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-violet-300 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <JoinIcon className="h-4 w-4" />
+                  {joining ? 'Joining...' : 'Join Battle'}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
-        {/* Quick links */}
-        <div className="grid grid-cols-2 gap-3">
-          <Link href="/leaderboard"
-            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-3 text-center transition">
-            <p className="text-white font-semibold text-sm">🏆 Leaderboard</p>
+        <section className="grid gap-3 sm:grid-cols-3 lg:col-span-2">
+          <Link
+            href="/practice"
+            className="group rounded-lg border border-white/10 bg-white/[0.04] p-4 transition hover:border-emerald-300/30 hover:bg-emerald-400/10"
+          >
+            <TargetIcon className="h-5 w-5 text-emerald-200" />
+            <h3 className="mt-3 text-base font-black">Practice</h3>
+            <p className="mt-1 text-sm text-white/45">Solo drills by topic</p>
           </Link>
-          <Link href="/rewards"
-            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-3 text-center transition">
-            <p className="text-white font-semibold text-sm">🃏 My Cards</p>
+          <Link
+            href="/leaderboard"
+            className="group rounded-lg border border-white/10 bg-white/[0.04] p-4 transition hover:border-amber-300/30 hover:bg-amber-400/10"
+          >
+            <RanksIcon className="h-5 w-5 text-amber-200" />
+            <h3 className="mt-3 text-base font-black">Ranks</h3>
+            <p className="mt-1 text-sm text-white/45">Compare rating and XP</p>
           </Link>
-        </div>
-
+          <Link
+            href="/rewards"
+            className="group rounded-lg border border-white/10 bg-white/[0.04] p-4 transition hover:border-sky-300/30 hover:bg-sky-400/10"
+          >
+            <CardsIcon className="h-5 w-5 text-sky-200" />
+            <h3 className="mt-3 text-base font-black">Cards</h3>
+            <p className="mt-1 text-sm text-white/45">Open packs and collect</p>
+          </Link>
+        </section>
       </div>
     </div>
+  )
+}
+
+function PlayerMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-center">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/35">{label}</p>
+      <p className="mt-0.5 text-base font-black text-white">{value}</p>
+    </div>
+  )
+}
+
+function BoltIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m13 2-8 11h6l-1 9 9-12h-6z" />
+    </svg>
+  )
+}
+
+function UsersIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 20a4 4 0 0 0-8 0" />
+      <circle cx="12" cy="9" r="3" />
+      <path d="M22 19a3.5 3.5 0 0 0-5-3.1" />
+      <path d="M2 19a3.5 3.5 0 0 1 5-3.1" />
+      <path d="M18 7.5a2.5 2.5 0 0 1 0 5" />
+      <path d="M6 7.5a2.5 2.5 0 0 0 0 5" />
+    </svg>
+  )
+}
+
+function PlusIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  )
+}
+
+function JoinIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 17H6a4 4 0 0 1 0-8h4" />
+      <path d="M14 7h4a4 4 0 0 1 0 8h-4" />
+      <path d="M8 12h8" />
+    </svg>
+  )
+}
+
+function CopyIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="8" y="8" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+function PlayIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M8 5.5v13l10-6.5z" />
+    </svg>
+  )
+}
+
+function BackIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  )
+}
+
+function CloseIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  )
+}
+
+function TargetIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v3" />
+      <path d="M12 19v3" />
+      <path d="M2 12h3" />
+      <path d="M19 12h3" />
+    </svg>
+  )
+}
+
+function RanksIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 19v-6h4v6" />
+      <path d="M10 19V7h4v12" />
+      <path d="M15 19v-9h4v9" />
+      <path d="M4 19h16" />
+    </svg>
+  )
+}
+
+function CardsIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6" y="4" width="12" height="16" rx="2" />
+      <path d="M9 8h6" />
+      <path d="M9 12h3" />
+      <path d="m14 15 1 1 2-2" />
+    </svg>
   )
 }

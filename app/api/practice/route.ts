@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timeLimits, generateTargetedQuestions } from '@/lib/game/questions'
 import type { Difficulty, Category, PracticeOptions } from '@/lib/game/questions'
+import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
 
 const CATEGORIES: Category[] = ['addition', 'subtraction', 'multiplication', 'division', 'fractions', 'order_of_ops']
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard']
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
   }
 
   const safeOptions = sanitizeOptions(options)
+  await cleanupInactiveBattles(adminSupabase)
 
   const questions = generateTargetedQuestions(
     category,

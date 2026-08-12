@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { timeLimits } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
+import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
 
 function generateInviteCode(): string {
   return Math.random().toString(36).substring(2, 8).toUpperCase()
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
   if (!Number.isFinite(question_count) || question_count < 1 || question_count > 50) {
     return NextResponse.json({ error: 'question_count must be between 1 and 50' }, { status: 400 })
   }
+
+  await cleanupInactiveBattles(adminSupabase)
 
   const { data: battle, error } = await adminSupabase
     .from('battles')

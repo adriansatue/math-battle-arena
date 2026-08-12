@@ -142,6 +142,8 @@ export default function AdminPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [actionBusy, setActionBusy] = useState<'cleanup' | 'flags' | null>(null)
+  const [actionMessage, setActionMessage] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -177,6 +179,64 @@ export default function AdminPage() {
       cancelled = true
     }
   }, [router])
+
+  async function refreshDashboard() {
+    const response = await fetch('/api/admin/dashboard', { cache: 'no-store' })
+
+    if (response.status === 403) {
+      router.push('/lobby')
+      return
+    }
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      setActionMessage(body?.error ?? 'No se pudo refrescar el panel.')
+      return
+    }
+
+    setDashboard((await response.json()) as DashboardData)
+  }
+
+  async function runCleanup() {
+    setActionBusy('cleanup')
+    setActionMessage('')
+
+    try {
+      const response = await fetch('/api/admin/battles/cleanup', { method: 'POST' })
+      const body = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        setActionMessage(body?.error ?? 'No se pudo ejecutar el cleanup.')
+        return
+      }
+
+      const closed = typeof body?.closed === 'number' ? body.closed : 0
+      setActionMessage(`Cleanup completado: ${closed} partidas cerradas.`)
+      await refreshDashboard()
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  async function clearFlags() {
+    setActionBusy('flags')
+    setActionMessage('')
+
+    try {
+      const response = await fetch('/api/admin/flagged', { method: 'PATCH' })
+      const body = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        setActionMessage(body?.error ?? 'No se pudieron limpiar los flags.')
+        return
+      }
+
+      setActionMessage('Flags limpiados correctamente.')
+      await refreshDashboard()
+    } finally {
+      setActionBusy(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -221,6 +281,22 @@ export default function AdminPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={runCleanup}
+              disabled={actionBusy !== null}
+              className="rounded-lg border border-cyan-400/30 bg-cyan-500/15 px-4 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {actionBusy === 'cleanup' ? 'Cerrando...' : 'Run cleanup'}
+            </button>
+            <button
+              type="button"
+              onClick={clearFlags}
+              disabled={actionBusy !== null || summary.flaggedAnswers === 0}
+              className="rounded-lg border border-amber-400/30 bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {actionBusy === 'flags' ? 'Limpiando...' : 'Clear flags'}
+            </button>
             <Link
               href="/admin/cards"
               className="rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15"
@@ -241,6 +317,12 @@ export default function AdminPage() {
             </Link>
           </div>
         </div>
+
+        {actionMessage && (
+          <div className="mb-6 rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white/75">
+            {actionMessage}
+          </div>
+        )}
 
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard

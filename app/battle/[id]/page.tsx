@@ -191,6 +191,12 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
 
       if (!b) return
 
+      if (b.status === 'finished') {
+        clearInterval(interval)
+        router.push(`/results/${battleId}`)
+        return
+      }
+
       if (b.status === 'active') {
         setBattle(prev => ({ ...(prev ?? {}), ...b }))
         setStatus('active')
@@ -226,7 +232,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [status, battleId, supabase])
+  }, [status, battleId, router, supabase])
 
   // Load user + battle data
   useEffect(() => {
@@ -249,6 +255,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         .eq('id', battleId)
         .single()
       if (!battleData) { router.push('/lobby'); return }
+      if (battleData.status === 'finished') {
+        router.push(`/results/${battleId}`)
+        return
+      }
       setBattle(battleData)
       setStatus(battleData.status as 'waiting' | 'active' | 'finished')
 
@@ -372,12 +382,16 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
             }
             fetchQuestions()
           }
+
+          if (updated.status === 'finished') {
+            router.push(`/results/${battleId}`)
+          }
         }
       )
       .subscribe()
 
     return () => { supabase.removeChannel(subscription) }
-  }, [battleId, supabase])
+  }, [battleId, router, supabase])
 
   // Host manually starts the battle
   async function startBattle() {

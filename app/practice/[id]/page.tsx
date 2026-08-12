@@ -349,9 +349,11 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
 
     const data = await readResponseJson(res)
     if (!res.ok) { setPackError(String(data.error ?? 'Could not open this pack.')); setOpening(false); return }
-    const costs = { basic: 500, rare: 2000, legendary: 5000 }
+    const costs = { basic: 300, rare: 900, legendary: 1800 }
     setPackCards(Array.isArray(data.cards) ? data.cards as PackCard[] : [])
-    setPackBalance(prev => prev !== null ? prev - costs[packType] : null)
+    setPackBalance(prev => typeof data.points_balance === 'number'
+      ? data.points_balance
+      : prev !== null ? prev - costs[packType] : null)
     setShowPack(true)
     setOpening(false)
   }
@@ -364,9 +366,9 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
                   summary.accuracy >= 40 ? 2 : 1
 
     const PACKS = [
-      { id: 'basic',     label: 'Basic',     emoji: '📦', cost: 500,  color: 'from-slate-400 to-slate-500',   glow: 'shadow-slate-400/20' },
-      { id: 'rare',      label: 'Rare',      emoji: '💎', cost: 2000, color: 'from-blue-400 to-cyan-500',     glow: 'shadow-blue-400/20'  },
-      { id: 'legendary', label: 'Legendary', emoji: '👑', cost: 5000, color: 'from-yellow-400 to-amber-500',  glow: 'shadow-yellow-400/20' },
+      { id: 'basic',     label: 'Basic',     emoji: '📦', cost: 300,  color: 'from-slate-400 to-slate-500',   glow: 'shadow-slate-400/20' },
+      { id: 'rare',      label: 'Rare',      emoji: '💎', cost: 900,  color: 'from-blue-400 to-cyan-500',     glow: 'shadow-blue-400/20'  },
+      { id: 'legendary', label: 'Legendary', emoji: '👑', cost: 1800, color: 'from-yellow-400 to-amber-500',  glow: 'shadow-yellow-400/20' },
     ]
 
     const perfLabel = summary.accuracy >= 90 ? 'Outstanding! 🔥' :

@@ -160,7 +160,7 @@ export async function saveUsername(formData: FormData) {
 
   const { error: updateError } = await adminSupabase
     .from('profiles')
-    .update({ username })
+    .update({ username, username_customized: true })
     .eq('id', user.id)
   if (updateError) return { error: 'Could not save username. Please try again.' }
 
