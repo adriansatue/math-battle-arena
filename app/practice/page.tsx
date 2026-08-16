@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { use, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -70,12 +70,25 @@ const DIFFICULTIES = [
 
 const TIMES_TABLES = [1,2,3,4,5,6,7,8,9,10,11,12]
 const MAX_NUMBERS  = [10, 20, 50, 100, 500, 1000]
+const CATEGORY_IDS: Category[] = ['addition', 'subtraction', 'multiplication', 'division', 'fractions', 'order_of_ops']
 
-export default function PracticePage() {
+export default function PracticePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ topic?: string; difficulty?: string; source?: string }>
+}) {
+  const query = use(searchParams)
   const router = useRouter()
 
-  const [category,   setCategory]   = useState<Category | null>(null)
-  const [difficulty, setDifficulty] = useState<Difficulty | null>(null)
+  const recommendedCategory = CATEGORY_IDS.includes(query.topic as Category)
+    ? query.topic as Category
+    : null
+  const recommendedDifficulty = ['easy', 'medium', 'hard'].includes(query.difficulty ?? '')
+    ? query.difficulty as Difficulty
+    : null
+
+  const [category,   setCategory]   = useState<Category | null>(recommendedCategory)
+  const [difficulty, setDifficulty] = useState<Difficulty | null>(recommendedDifficulty)
   const [answerMode, setAnswerMode] = useState<AnswerMode | null>(null)
   const [questions,  setQuestions]  = useState(10)
   const [loading,    setLoading]    = useState(false)
@@ -107,7 +120,14 @@ export default function PracticePage() {
     const res  = await fetch('/api/practice', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ category, difficulty, question_count: questions, options, answer_mode: answerMode }),
+      body:    JSON.stringify({
+        category,
+        difficulty,
+        question_count: questions,
+        options,
+        answer_mode: answerMode,
+        source: query.source === 'results' || query.source === 'profile' ? query.source : 'manual',
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setError(data.error); setLoading(false); return }
@@ -140,6 +160,24 @@ export default function PracticePage() {
             </span>
           </h1>
           <p className="text-white/40 text-sm">No opponents. No pressure. Just you vs the numbers.</p>
+          {query.source === 'results' && recommendedCategory && (
+            <div className="mx-auto mt-4 max-w-sm border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-left">
+              <p className="text-xs font-bold uppercase text-amber-300/70">Recommended focus</p>
+              <p className="mt-1 text-sm font-bold text-white">
+                {CATEGORIES.find(item => item.id === recommendedCategory)?.label} · Easy · 10 questions
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/50">Goal: 10 correct answers or improve your recent accuracy.</p>
+            </div>
+          )}
+          {query.source === 'profile' && recommendedCategory && (
+            <div className="mx-auto mt-4 max-w-sm border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-left">
+              <p className="text-xs font-bold uppercase text-amber-300/70">Recommended focus</p>
+              <p className="mt-1 text-sm font-bold text-white">
+                {CATEGORIES.find(item => item.id === recommendedCategory)?.label} · Easy · 10 questions
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/50">Goal: 10 correct answers or improve your recent accuracy.</p>
+            </div>
+          )}
         </div>
 
         {/* Progress steps */}

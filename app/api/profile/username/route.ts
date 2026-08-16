@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { escapeLikePattern, isUsernameConflict } from '@/lib/supabase/usernames'
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/
 const GENERATED_USERNAME_PATTERN =
@@ -49,7 +50,7 @@ export async function PATCH(request: Request) {
   const { data: existing } = await admin
     .from('profiles')
     .select('id')
-    .eq('username', username)
+    .ilike('username', escapeLikePattern(username))
     .neq('id', user.id)
     .single()
 
@@ -68,6 +69,9 @@ export async function PATCH(request: Request) {
     .single()
 
   if (updateError || !updated) {
+    if (isUsernameConflict(updateError)) {
+      return NextResponse.json({ error: 'Username is already taken. Try another one.' }, { status: 409 })
+    }
     return NextResponse.json({ error: 'Could not update username. Please try again.' }, { status: 500 })
   }
 

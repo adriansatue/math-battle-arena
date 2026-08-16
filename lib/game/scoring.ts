@@ -1,4 +1,12 @@
 import type { Difficulty } from './questions'
+export {
+  LEVEL_THRESHOLDS,
+  MAX_LEVEL,
+  getLevelAndRank,
+  getLevelProgress,
+  getLevelThreshold,
+  getRankTitleForLevel,
+} from './progression'
 
 export type RewardMode = 'practice' | 'bot' | 'pvp'
 
@@ -147,26 +155,6 @@ export function getRewardMode(battle: { guest_id?: string | null; bot_id?: strin
   if (!battle.guest_id) return 'practice'
   if (battle.bot_id) return 'bot'
   return 'pvp'
-}
-
-// Level + rank computed from total_points, which now represents lifetime XP.
-const LEVEL_THRESHOLDS: { min: number; level: number; title: string }[] = [
-  { min:      0, level: 1, title: 'Math Rookie'    },
-  { min:    500, level: 2, title: 'Number Cruncher' },
-  { min:   1500, level: 3, title: 'Equation Solver' },
-  { min:   3500, level: 4, title: 'Formula Master'  },
-  { min:   7000, level: 5, title: 'Calc Wizard'     },
-  { min:  12000, level: 6, title: 'Algebra Champion' },
-  { min:  20000, level: 7, title: 'Math Prodigy'    },
-  { min:  35000, level: 8, title: 'Grand Mathematician' },
-]
-
-export function getLevelAndRank(totalPoints: number): { level: number; rank_title: string } {
-  let result = LEVEL_THRESHOLDS[0]
-  for (const tier of LEVEL_THRESHOLDS) {
-    if (totalPoints >= tier.min) result = tier
-  }
-  return { level: result.level, rank_title: result.title }
 }
 
 // Detect suspicious timing

@@ -5,9 +5,10 @@ import { useState } from 'react'
 interface DemoButtonProps {
   className?: string
   label?: string
+  next?: string
 }
 
-export function DemoButton({ className, label = '👀 Try as Guest' }: DemoButtonProps) {
+export function DemoButton({ className, label = '👀 Try as Guest', next = '/practice' }: DemoButtonProps) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
@@ -31,7 +32,7 @@ export function DemoButton({ className, label = '👀 Try as Guest' }: DemoButto
 
     // Hard redirect so the browser fully processes the Set-Cookie headers
     // before any server-side auth check in the next request
-    window.location.href = '/practice'
+    window.location.href = next
   }
 
   return (

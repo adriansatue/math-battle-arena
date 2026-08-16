@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { SwordLogo } from '@/components/SwordLogo'
+import { timeLimits } from '@/lib/game/questions'
+import { recordClientEvent } from '@/lib/events/client'
 
 type Mode = 'realtime' | 'turnbased'
 type Difficulty = 'easy' | 'medium' | 'hard'
@@ -21,28 +24,24 @@ type IconProps = {
   className?: string
 }
 
-const BOT_FALLBACK_SECONDS = 25
+const BOT_FALLBACK_SECONDS = 5
 const DIFFICULTIES: Record<Difficulty, {
   label: string
-  time: string
   detail: string
   accent: string
 }> = {
   easy: {
     label:  'Easy',
-    time:   '25s',
     detail: 'Warm-up pace',
     accent: 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100',
   },
   medium: {
     label:  'Medium',
-    time:   '15s',
     detail: 'Balanced race',
     accent: 'border-amber-300/40 bg-amber-400/15 text-amber-100',
   },
   hard: {
     label:  'Hard',
-    time:   '6s',
     detail: 'Fast answers',
     accent: 'border-rose-300/40 bg-rose-400/15 text-rose-100',
   },
@@ -81,6 +80,10 @@ export default function LobbyPage() {
   const queueTimeRef = useRef(0)
   const queueInterval = useRef<NodeJS.Timeout | null>(null)
   const pollInterval = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    void recordClientEvent('lobby_viewed')
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -218,6 +221,15 @@ export default function LobbyPage() {
         stopQueueTimers()
 
         try {
+          const finalCheckRes = await fetch('/api/matchmaking/queue')
+          const finalCheckData = await finalCheckRes.json().catch(() => ({}))
+
+          if (finalCheckData.matched) {
+            setInQueue(false)
+            router.push(`/battle/${finalCheckData.battle_id}`)
+            return
+          }
+
           const botRes = await fetch('/api/matchmaking/bot', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -255,7 +267,7 @@ export default function LobbyPage() {
         await leaveQueue()
         router.push(`/battle/${checkData.battle_id}`)
       }
-    }, 2000)
+    }, 1000)
   }
 
   async function leaveQueue() {
@@ -271,21 +283,28 @@ export default function LobbyPage() {
   }
 
   const queueProgress = Math.min(100, (queueTime / BOT_FALLBACK_SECONDS) * 100)
-  const selectedQueueDifficulty = DIFFICULTIES[queueDiff]
   const selectedFriendDifficulty = DIFFICULTIES[difficulty]
 
   return (
-    <div className="min-h-screen bg-[#090b14] px-4 pb-24 pt-5 text-white sm:pb-10">
-      <div className="mx-auto grid w-full max-w-6xl gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
-        <header className="lg:col-span-2">
-          <div className="flex flex-col gap-4 rounded-lg border border-white/10 bg-white/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Lobby</p>
-              <h1 className="mt-1 text-3xl font-black tracking-tight sm:text-4xl">Choose Your Match</h1>
-              <p className="mt-1 text-sm text-white/50">Play a fair battle, invite a friend, or train before the next round.</p>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 px-4 pb-16 pt-4 text-white sm:px-6 sm:pb-8">
+      <div className="mx-auto grid w-full max-w-3xl gap-3">
+        <header>
+          <div className="rounded-2xl border border-purple-300/20 bg-white/10 p-3 shadow-xl shadow-purple-950/25 backdrop-blur-sm sm:p-4">
+            <div className="flex items-center gap-3">
+              <div className="shrink-0 drop-shadow-xl">
+                <SwordLogo className="h-12 w-12 sm:h-14 sm:w-14" id="lobby-hero" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-purple-300">Play</p>
+                <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Choose Your Battle</h1>
+              </div>
+              <div className="hidden grid-cols-3 gap-2 sm:grid">
+                <PlayerMetric label="Level" value={formatNumber(profile?.level ?? 1)} />
+                <PlayerMetric label="Rating" value={formatNumber(profile?.rating ?? 1000)} />
+                <PlayerMetric label="Coins" value={formatNumber(profile?.points_balance ?? profile?.total_points ?? 0)} />
+              </div>
             </div>
-
-            <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:hidden">
               <PlayerMetric label="Level" value={formatNumber(profile?.level ?? 1)} />
               <PlayerMetric label="Rating" value={formatNumber(profile?.rating ?? 1000)} />
               <PlayerMetric label="Coins" value={formatNumber(profile?.points_balance ?? profile?.total_points ?? 0)} />
@@ -294,28 +313,28 @@ export default function LobbyPage() {
         </header>
 
         {error && (
-          <div className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100 lg:col-span-2">
+          <div className="rounded-2xl border border-red-300/30 bg-red-500/15 px-4 py-3 text-sm text-red-100 shadow-lg shadow-red-950/20">
             {error}
           </div>
         )}
 
-        <section className="rounded-lg border border-cyan-300/20 bg-cyan-400/[0.07] p-5 shadow-2xl shadow-cyan-950/20">
+        <section className="rounded-2xl border border-purple-300/25 bg-purple-500/15 p-4 shadow-xl shadow-purple-950/25 backdrop-blur-sm">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <BoltIcon className="h-5 w-5 text-cyan-200" />
-                <h2 className="text-xl font-black">Quick Battle</h2>
+                <BoltIcon className="h-5 w-5 text-pink-200" />
+                <h2 className="text-lg font-black">Quick Battle</h2>
               </div>
-              <p className="mt-1 text-sm text-white/55">
-                Fair matchmaking first. Bot fallback after {BOT_FALLBACK_SECONDS}s.
+              <p className="mt-0.5 text-xs text-purple-100/65">
+                Player first · bot after {BOT_FALLBACK_SECONDS}s
               </p>
             </div>
-            <span className={`rounded-lg border px-3 py-1 text-xs font-bold ${selectedQueueDifficulty.accent}`}>
-              {selectedQueueDifficulty.time}
+            <span className="rounded-lg border border-white/10 bg-black/15 px-2.5 py-1 text-xs font-bold text-purple-100/70">
+              10 questions
             </span>
           </div>
 
-          <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-3 gap-2">
             {(Object.keys(DIFFICULTIES) as Difficulty[]).map(diff => {
               const option = DIFFICULTIES[diff]
               const selected = queueDiff === diff
@@ -326,46 +345,46 @@ export default function LobbyPage() {
                   aria-pressed={selected}
                   onClick={() => setQueueDiff(diff)}
                   disabled={inQueue}
-                  className={`rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  className={`rounded-xl border px-2 py-2 text-center transition disabled:cursor-not-allowed disabled:opacity-60 ${
                     selected
                       ? option.accent
-                      : 'border-white/10 bg-white/[0.04] text-white/60 hover:border-white/20 hover:bg-white/[0.07]'
+                      : 'border-white/10 bg-white/5 text-purple-100/65 hover:border-purple-200/30 hover:bg-white/10'
                   }`}
                 >
                   <span className="block text-sm font-black">{option.label}</span>
-                  <span className="mt-0.5 block text-xs opacity-70">{option.detail}</span>
+                  <span className="mt-0.5 block text-[11px] opacity-70">{timeLimits[diff]}s / question</span>
                 </button>
               )
             })}
           </div>
 
           {inQueue ? (
-            <div className="mt-5 rounded-lg border border-white/10 bg-black/20 p-4">
+            <div className="mt-4 rounded-2xl border border-purple-200/15 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="relative h-9 w-9 rounded-full border border-cyan-300/30 bg-cyan-300/10">
-                    <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-200" />
-                    <div className="absolute inset-1 rounded-full border border-cyan-200/30 animate-ping" />
+                  <div className="relative h-9 w-9 rounded-full border border-pink-300/30 bg-pink-300/10">
+                    <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-pink-200" />
+                    <div className="absolute inset-1 rounded-full border border-pink-200/30 animate-ping" />
                   </div>
                   <div>
                     <p className="text-sm font-bold">
-                      {queueTime >= BOT_FALLBACK_SECONDS - 3 ? 'Starting bot battle...' : 'Finding a fair opponent'}
+                      {queueTime >= BOT_FALLBACK_SECONDS - 1 ? 'Starting bot battle...' : 'Finding a fair opponent'}
                     </p>
-                    <p className="text-xs text-white/45">Searching near your rating and level</p>
+                    <p className="text-xs text-purple-100/55">Searching near your rating and level</p>
                   </div>
                 </div>
-                <span className="font-mono text-sm text-cyan-100">{formatTime(queueTime)}</span>
+                <span className="font-mono text-sm text-pink-100">{formatTime(queueTime)}</span>
               </div>
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
                 <div
-                  className="h-full rounded-full bg-cyan-300 transition-all duration-500"
+                  className="h-full rounded-full bg-gradient-to-r from-purple-400 to-pink-400 transition-all duration-500"
                   style={{ width: `${queueProgress}%` }}
                 />
               </div>
               <button
                 type="button"
                 onClick={leaveQueue}
-                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-red-300/25 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/20"
+                className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300/25 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/20"
               >
                 <CloseIcon className="h-4 w-4" />
                 Cancel search
@@ -375,7 +394,7 @@ export default function LobbyPage() {
             <button
               type="button"
               onClick={joinQueue}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 px-5 py-4 text-base font-black text-slate-950 shadow-xl shadow-cyan-950/30 transition hover:bg-cyan-200 hover:-translate-y-0.5 active:translate-y-0"
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-purple-950/30 transition hover:from-purple-400 hover:to-pink-400 hover:-translate-y-0.5 active:translate-y-0"
             >
               <BoltIcon className="h-5 w-5" />
               Find Opponent
@@ -383,22 +402,22 @@ export default function LobbyPage() {
           )}
         </section>
 
-        <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
+        <section className="rounded-2xl border border-white/15 bg-white/10 p-4 shadow-xl shadow-purple-950/20 backdrop-blur-sm">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <UsersIcon className="h-5 w-5 text-violet-200" />
-                <h2 className="text-xl font-black">Play a Friend</h2>
+                <UsersIcon className="h-5 w-5 text-purple-200" />
+                <h2 className="text-lg font-black">Play a Friend</h2>
               </div>
-              <p className="mt-1 text-sm text-white/50">Create a room or join with a 6-character code.</p>
+              <p className="mt-1 text-sm text-purple-100/65">Create a room or join with a 6-character code.</p>
             </div>
-            <span className={`rounded-lg border px-3 py-1 text-xs font-bold ${selectedFriendDifficulty.accent}`}>
+            <span className={`rounded-xl border px-3 py-1 text-xs font-bold ${selectedFriendDifficulty.accent}`}>
               {selectedFriendDifficulty.label}
             </span>
           </div>
 
           {friendPanel === null && (
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -407,26 +426,26 @@ export default function LobbyPage() {
                   setBattleId(null)
                   setCopied(false)
                 }}
-                className="rounded-lg border border-white/10 bg-white/[0.06] p-4 text-left transition hover:border-violet-300/35 hover:bg-violet-400/10"
+                className="rounded-2xl border border-white/10 bg-white/5 p-3.5 text-left transition hover:border-purple-300/40 hover:bg-purple-400/15"
               >
-                <PlusIcon className="mb-3 h-5 w-5 text-violet-200" />
+                <PlusIcon className="mb-3 h-5 w-5 text-purple-200" />
                 <span className="block text-sm font-black">Create Game</span>
-                <span className="mt-1 block text-xs text-white/45">Invite by code</span>
+                <span className="mt-1 block text-xs text-purple-100/55">Invite by code</span>
               </button>
               <button
                 type="button"
                 onClick={() => setFriendPanel('join')}
-                className="rounded-lg border border-white/10 bg-white/[0.06] p-4 text-left transition hover:border-violet-300/35 hover:bg-violet-400/10"
+                className="rounded-2xl border border-white/10 bg-white/5 p-3.5 text-left transition hover:border-pink-300/40 hover:bg-pink-400/15"
               >
-                <JoinIcon className="mb-3 h-5 w-5 text-violet-200" />
+                <JoinIcon className="mb-3 h-5 w-5 text-pink-200" />
                 <span className="block text-sm font-black">Join Room</span>
-                <span className="mt-1 block text-xs text-white/45">Enter a code</span>
+                <span className="mt-1 block text-xs text-purple-100/55">Enter a code</span>
               </button>
             </div>
           )}
 
           {friendPanel === 'create' && (
-            <div className="mt-5 space-y-4">
+            <div className="mt-4 space-y-3">
               {!inviteCode && (
                 <div className="grid grid-cols-3 gap-2">
                   {(Object.keys(DIFFICULTIES) as Difficulty[]).map(diff => {
@@ -438,10 +457,10 @@ export default function LobbyPage() {
                         type="button"
                         aria-pressed={selected}
                         onClick={() => setDifficulty(diff)}
-                        className={`rounded-lg border px-3 py-2 text-sm font-bold transition ${
+                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${
                           selected
                             ? option.accent
-                            : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08]'
+                            : 'border-white/10 bg-white/5 text-purple-100/60 hover:bg-white/10'
                         }`}
                       >
                         {option.label}
@@ -452,14 +471,14 @@ export default function LobbyPage() {
               )}
 
               {inviteCode ? (
-                <div className="rounded-lg border border-emerald-300/25 bg-emerald-400/10 p-4 text-center">
+                <div className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4 text-center">
                   <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">Room Code</p>
-                  <p className="mt-2 font-mono text-4xl font-black tracking-[0.24em] text-white">{inviteCode}</p>
+                  <p className="mt-2 font-mono text-3xl font-black tracking-[0.22em] text-white">{inviteCode}</p>
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={copyInviteCode}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200/20 bg-white/10 px-3 py-3 text-sm font-bold text-emerald-50 hover:bg-white/15"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200/20 bg-white/10 px-3 py-3 text-sm font-bold text-emerald-50 hover:bg-white/15"
                     >
                       <CopyIcon className="h-4 w-4" />
                       {copied ? 'Copied' : 'Copy'}
@@ -467,7 +486,7 @@ export default function LobbyPage() {
                     <button
                       type="button"
                       onClick={goToBattle}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-300 px-3 py-3 text-sm font-black text-slate-950 hover:bg-emerald-200"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-300 px-3 py-3 text-sm font-black text-slate-950 hover:bg-emerald-200"
                     >
                       <PlayIcon className="h-4 w-4" />
                       Enter
@@ -479,7 +498,7 @@ export default function LobbyPage() {
                   <button
                     type="button"
                     onClick={() => setFriendPanel(null)}
-                    className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+                    className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/65 hover:bg-white/10"
                     aria-label="Back"
                   >
                     <BackIcon className="h-5 w-5" />
@@ -488,7 +507,7 @@ export default function LobbyPage() {
                     type="button"
                     onClick={createBattle}
                     disabled={creating}
-                    className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-violet-300 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-purple-300 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-purple-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <PlusIcon className="h-4 w-4" />
                     {creating ? 'Creating...' : 'Create Battle'}
@@ -506,13 +525,13 @@ export default function LobbyPage() {
                 onChange={event => setJoinCode(event.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6))}
                 placeholder="X4K9PZ"
                 maxLength={6}
-                className="h-14 w-full rounded-lg border border-white/15 bg-black/20 px-4 text-center font-mono text-2xl font-black tracking-[0.22em] text-white placeholder:text-white/15 focus:border-violet-300/70 focus:outline-none"
+                className="h-12 w-full rounded-2xl border border-white/15 bg-black/20 px-4 text-center font-mono text-2xl font-black tracking-[0.22em] text-white placeholder:text-white/15 focus:border-purple-300/70 focus:outline-none"
               />
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setFriendPanel(null)}
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/65 hover:bg-white/10"
                   aria-label="Back"
                 >
                   <BackIcon className="h-5 w-5" />
@@ -521,7 +540,7 @@ export default function LobbyPage() {
                   type="button"
                   onClick={joinByCode}
                   disabled={joining || joinCode.length < 6}
-                  className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-violet-300 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-purple-300 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-purple-200 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <JoinIcon className="h-4 w-4" />
                   {joining ? 'Joining...' : 'Join Battle'}
@@ -531,31 +550,40 @@ export default function LobbyPage() {
           )}
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-3 lg:col-span-2">
-          <Link
-            href="/practice"
-            className="group rounded-lg border border-white/10 bg-white/[0.04] p-4 transition hover:border-emerald-300/30 hover:bg-emerald-400/10"
-          >
-            <TargetIcon className="h-5 w-5 text-emerald-200" />
-            <h3 className="mt-3 text-base font-black">Practice</h3>
-            <p className="mt-1 text-sm text-white/45">Solo drills by topic</p>
-          </Link>
-          <Link
-            href="/leaderboard"
-            className="group rounded-lg border border-white/10 bg-white/[0.04] p-4 transition hover:border-amber-300/30 hover:bg-amber-400/10"
-          >
-            <RanksIcon className="h-5 w-5 text-amber-200" />
-            <h3 className="mt-3 text-base font-black">Ranks</h3>
-            <p className="mt-1 text-sm text-white/45">Compare rating and XP</p>
-          </Link>
-          <Link
-            href="/rewards"
-            className="group rounded-lg border border-white/10 bg-white/[0.04] p-4 transition hover:border-sky-300/30 hover:bg-sky-400/10"
-          >
-            <CardsIcon className="h-5 w-5 text-sky-200" />
-            <h3 className="mt-3 text-base font-black">Cards</h3>
-            <p className="mt-1 text-sm text-white/45">Open packs and collect</p>
-          </Link>
+        <section className="rounded-2xl border border-white/15 bg-white/10 p-4 shadow-xl shadow-purple-950/20 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black">More Ways to Play</h2>
+              <p className="mt-1 text-sm text-purple-100/60">Practice, compare ranks, or open your card collection.</p>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
+            <Link
+              href="/practice"
+              className="group rounded-xl border border-white/10 bg-white/5 p-3 text-center transition hover:border-emerald-300/30 hover:bg-emerald-400/10 sm:text-left"
+            >
+              <TargetIcon className="mx-auto h-5 w-5 text-emerald-200 sm:mx-0" />
+              <h3 className="mt-2 text-sm font-black sm:text-base">Practice</h3>
+              <p className="mt-0.5 hidden text-sm text-purple-100/55 sm:block">Solo drills by topic</p>
+            </Link>
+            <Link
+              href="/leaderboard"
+              className="group rounded-xl border border-white/10 bg-white/5 p-3 text-center transition hover:border-amber-300/30 hover:bg-amber-400/10 sm:text-left"
+            >
+              <RanksIcon className="mx-auto h-5 w-5 text-amber-200 sm:mx-0" />
+              <h3 className="mt-2 text-sm font-black sm:text-base">Ranks</h3>
+              <p className="mt-0.5 hidden text-sm text-purple-100/55 sm:block">Compare rating and XP</p>
+            </Link>
+            <Link
+              href="/rewards"
+              className="group rounded-xl border border-white/10 bg-white/5 p-3 text-center transition hover:border-pink-300/30 hover:bg-pink-400/10 sm:text-left"
+            >
+              <CardsIcon className="mx-auto h-5 w-5 text-pink-200 sm:mx-0" />
+              <h3 className="mt-2 text-sm font-black sm:text-base">Cards</h3>
+              <p className="mt-0.5 hidden text-sm text-purple-100/55 sm:block">Open packs and collect</p>
+            </Link>
+          </div>
         </section>
       </div>
     </div>
@@ -564,8 +592,8 @@ export default function LobbyPage() {
 
 function PlayerMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-center">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/35">{label}</p>
+    <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-center">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-purple-100/45">{label}</p>
       <p className="mt-0.5 text-base font-black text-white">{value}</p>
     </div>
   )

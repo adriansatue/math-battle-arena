@@ -80,7 +80,10 @@ export default function HowItWorksPage() {
 
         <section className="grid gap-4 md:grid-cols-3">
           {MODES.map(mode => (
-            <article key={mode.title} className="rounded-lg border border-white/10 bg-white/[0.06] p-5">
+            <article
+              key={mode.title}
+              className="grid h-full grid-rows-[auto_auto_1fr_auto] rounded-lg border border-white/10 bg-white/[0.06] p-5"
+            >
               <p className="text-xs font-bold uppercase tracking-wide text-cyan-300">{mode.subtitle}</p>
               <h2 className="mt-2 text-xl font-black text-white">{mode.title}</h2>
               <p className="mt-3 text-sm leading-relaxed text-white/65">{mode.description}</p>

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { calculateBattleRewards, calculatePoints, calculateRatingDelta, isFlagged } from '@/lib/game/scoring'
+import {
+  MAX_LEVEL,
+  calculateBattleRewards,
+  calculatePoints,
+  calculateRatingDelta,
+  getLevelAndRank,
+  getLevelProgress,
+  getLevelThreshold,
+  isFlagged,
+} from '@/lib/game/scoring'
 
 describe('calculatePoints', () => {
   it('awards base, speed, first-answer, and streak bonuses for a perfect realtime answer', () => {
@@ -85,6 +94,31 @@ describe('calculateRatingDelta', () => {
       isWinner: true,
       isDraw:   false,
     })).toBe(0)
+  })
+})
+
+describe('level progression', () => {
+  it('supports 100 account levels with a rising XP curve', () => {
+    expect(MAX_LEVEL).toBe(100)
+    expect(getLevelThreshold(1)).toBe(0)
+    expect(getLevelThreshold(100)).toBeGreaterThan(getLevelThreshold(90))
+    expect(getLevelAndRank(getLevelThreshold(100))).toMatchObject({
+      level:      100,
+      rank_title: 'Grand Mathematician',
+    })
+  })
+
+  it('reports progress toward the next level', () => {
+    const level20Threshold = getLevelThreshold(20)
+    const progress = getLevelProgress(level20Threshold)
+
+    expect(progress).toMatchObject({
+      level:        20,
+      rankTitle:    'Number Builder',
+      isMaxLevel:   false,
+      xpIntoLevel:  0,
+    })
+    expect(progress.xpToNextLevel).toBeGreaterThan(0)
   })
 })
 

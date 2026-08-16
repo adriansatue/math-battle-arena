@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { cookies } from 'next/headers'
+import { isUsernameConflict } from '@/lib/supabase/usernames'
+import { recordServerEvent } from '@/lib/events/server'
 
 const ADJECTIVES = ['Swift', 'Brave', 'Clever', 'Quick', 'Bright', 'Wild', 'Sharp', 'Bold', 'Calm', 'Cool']
 const NOUNS      = ['Wizard', 'Knight', 'Hero', 'Ninja', 'Tiger', 'Eagle', 'Fox', 'Star', 'Wolf', 'Lion']
@@ -46,25 +48,36 @@ export async function POST() {
     .single()
 
   if (!existing) {
-    // Generate a unique guest username; retry once on collision
-    let username = randomUsername()
-    const { data: taken } = await admin
-      .from('profiles')
-      .select('id')
-      .eq('username', username)
-      .single()
-    if (taken) username = randomUsername() + Math.floor(Math.random() * 9)
+    let profileCreated = false
 
-    await admin.from('profiles').insert({
-      id:           user.id,
-      username,
-      total_points: 0,
-      level:        1,
-      rank_title:   'Math Rookie',
-      wins:         0,
-      losses:       0,
-      best_streak:  0,
-      username_customized: false,
+    for (let attempt = 0; attempt < 3 && !profileCreated; attempt += 1) {
+      const { error: insertError } = await admin.from('profiles').insert({
+        id:           user.id,
+        username:     randomUsername(),
+        total_points: 0,
+        level:        1,
+        rank_title:   'Math Rookie',
+        wins:         0,
+        losses:       0,
+        best_streak:  0,
+        username_customized: false,
+      })
+
+      if (!insertError) profileCreated = true
+      else if (!isUsernameConflict(insertError)) {
+        return NextResponse.json({ error: 'Could not create guest profile' }, { status: 500 })
+      }
+    }
+
+    if (!profileCreated) {
+      return NextResponse.json({ error: 'Could not allocate a guest username' }, { status: 503 })
+    }
+
+    await recordServerEvent({
+      userId: user.id,
+      eventName: 'account_started',
+      dedupKey: `account:${user.id}`,
+      properties: { account_type: 'anonymous' },
     })
   }
 

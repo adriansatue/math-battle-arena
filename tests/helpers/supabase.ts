@@ -19,6 +19,7 @@ type QueryMock = QueryResult & {
   order: ReturnType<typeof vi.fn>
   limit: ReturnType<typeof vi.fn>
   single: ReturnType<typeof vi.fn>
+  maybeSingle: ReturnType<typeof vi.fn>
   insert: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
   upsert: ReturnType<typeof vi.fn>
@@ -86,6 +87,7 @@ function createQueryMock(result: QueryResult): QueryMock {
   query.upsert = vi.fn(chain)
   query.delete = vi.fn(chain)
   query.single = vi.fn(async () => result)
+  query.maybeSingle = vi.fn(async () => result)
   query.then = Promise.resolve(result).then.bind(Promise.resolve(result))
 
   return query

@@ -44,6 +44,13 @@ async function readResponseJson(response: Response): Promise<Record<string, unkn
   return response.json().catch(() => ({}))
 }
 
+async function fetchBattleQuestions(battleId: string): Promise<Question[]> {
+  const response = await fetch(`/api/battles/${battleId}/questions`, { cache: 'no-store' })
+  if (!response.ok) return []
+  const data = await readResponseJson(response)
+  return Array.isArray(data.questions) ? data.questions as Question[] : []
+}
+
 export default function BattlePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: battleId } = use(params)
   const router           = useRouter()
@@ -200,14 +207,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       if (b.status === 'active') {
         setBattle(prev => ({ ...(prev ?? {}), ...b }))
         setStatus('active')
-        const { data: qs } = await supabase
-          .from('battle_questions_safe')
-          .select('*')
-          .eq('battle_id', battleId)
-          .order('sequence')
+        const qs = await fetchBattleQuestions(battleId)
 
-        if (qs && qs.length > 0) {
-          setQuestions(qs as Question[])
+        if (qs.length > 0) {
+          setQuestions(qs)
           setServerSentAt(new Date().toISOString())
         }
         clearInterval(interval)
@@ -262,13 +265,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       setBattle(battleData)
       setStatus(battleData.status as 'waiting' | 'active' | 'finished')
 
-      // Fetch questions (safe view — no correct_answer)
-      const { data: qs } = await supabase
-        .from('battle_questions_safe')
-        .select('*')
-        .eq('battle_id', battleId)
-        .order('sequence')
-      setQuestions((qs as Question[]) ?? [])
+      // Fetch questions through the API so RLS/security-invoker views cannot hide
+      // the safe question payload from valid participants.
+      const qs = await fetchBattleQuestions(battleId)
+      setQuestions(qs)
 
       // Fetch both player profiles
       const playerIds = [battleData.host_id, battleData.guest_id].filter(Boolean)
@@ -366,14 +366,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
             // Fetch questions — retry once with a delay to handle the race where
             // the Realtime event arrives before questions are fully readable in the DB.
             const fetchQuestions = async (attempt = 1) => {
-              const { data: qs } = await supabase
-                .from('battle_questions_safe')
-                .select('*')
-                .eq('battle_id', battleId)
-                .order('sequence')
+              const qs = await fetchBattleQuestions(battleId)
 
-              if (qs && qs.length > 0) {
-                setQuestions(qs as Question[])
+              if (qs.length > 0) {
+                setQuestions(qs)
                 setServerSentAt(new Date().toISOString())
               } else if (attempt < 4) {
                 // Retry with back-off: 500ms, 1000ms, 2000ms
@@ -420,14 +416,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     setStatus('active')
     
     // Fetch questions immediately
-    const { data: qs } = await supabase
-      .from('battle_questions_safe')
-      .select('*')
-      .eq('battle_id', battleId)
-      .order('sequence')
+    const qs = await fetchBattleQuestions(battleId)
     
-    if (qs && qs.length > 0) {
-      setQuestions(qs as Question[])
+    if (qs.length > 0) {
+      setQuestions(qs)
       setServerSentAt(new Date().toISOString())
     }
     

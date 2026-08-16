@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateQuestions } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
+import { recordServerEvent } from '@/lib/events/server'
 
 export async function POST(
   request: Request,
@@ -117,6 +118,21 @@ export async function POST(
     .from('battle_questions')
     .update({ server_sent_at: nowAfterInsert })
     .eq('battle_id', id)
+
+  await Promise.all(
+    [battle.host_id, battle.guest_id].filter(Boolean).map(playerId => recordServerEvent({
+      userId: playerId,
+      eventName: 'battle_started',
+      dedupKey: `battle:${id}:started`,
+      battleId: id,
+      properties: {
+        mode: battle.mode,
+        difficulty: battle.difficulty,
+        question_count: battle.question_count,
+        opponent_type: battle.bot_id ? 'bot' : 'human',
+      },
+    }))
+  )
 
   return NextResponse.json({
     message:   'Battle started!',

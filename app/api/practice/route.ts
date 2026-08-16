@@ -4,9 +4,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { timeLimits, generateTargetedQuestions } from '@/lib/game/questions'
 import type { Difficulty, Category, PracticeOptions } from '@/lib/game/questions'
 import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
+import { recordServerEvent } from '@/lib/events/server'
 
 const CATEGORIES: Category[] = ['addition', 'subtraction', 'multiplication', 'division', 'fractions', 'order_of_ops']
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard']
+const SOURCES = ['manual', 'results', 'profile'] as const
 
 function isValidNumberOption(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 1000
@@ -49,7 +51,8 @@ export async function POST(request: Request) {
     category,
     difficulty,
     question_count = 10,
-    options = {}
+    options = {},
+    source = 'manual',
   } = await request.json()
 
   if (!CATEGORIES.includes(category)) {
@@ -58,6 +61,10 @@ export async function POST(request: Request) {
 
   if (!DIFFICULTIES.includes(difficulty)) {
     return NextResponse.json({ error: 'Invalid difficulty' }, { status: 400 })
+  }
+
+  if (!SOURCES.includes(source)) {
+    return NextResponse.json({ error: 'Invalid practice source' }, { status: 400 })
   }
 
   if (!Number.isInteger(question_count) || question_count < 1 || question_count > 30) {
@@ -95,7 +102,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? 'Failed' }, { status: 500 })
   }
 
-  await adminSupabase
+  const { error: questionsError } = await adminSupabase
     .from('battle_questions')
     .insert(questions.map((q, i) => ({
       battle_id:      battle.id,
@@ -106,6 +113,45 @@ export async function POST(request: Request) {
       difficulty:     q.difficulty,
       server_sent_at: now,
     })))
+
+  if (questionsError) {
+    await adminSupabase
+      .from('battles')
+      .delete()
+      .eq('id', battle.id)
+
+    return NextResponse.json({ error: questionsError.message }, { status: 500 })
+  }
+
+  const { error: sessionError } = await adminSupabase.rpc('start_focused_practice', {
+    p_battle_id:  battle.id,
+    p_user_id:    user.id,
+    p_topic:      category,
+    p_difficulty: difficulty,
+    p_source:     source,
+  })
+
+  if (sessionError) {
+    await adminSupabase.from('battles').delete().eq('id', battle.id)
+    return NextResponse.json({ error: 'Failed to prepare practice comparison' }, { status: 500 })
+  }
+
+  await Promise.all([
+    recordServerEvent({
+      userId: user.id,
+      eventName: 'practice_started',
+      dedupKey: `practice:${battle.id}:started`,
+      battleId: battle.id,
+      properties: { category, difficulty, question_count: questions.length, source },
+    }),
+    recordServerEvent({
+      userId: user.id,
+      eventName: 'battle_started',
+      dedupKey: `battle:${battle.id}:started`,
+      battleId: battle.id,
+      properties: { mode: 'practice', difficulty, question_count: questions.length, opponent_type: 'none' },
+    }),
+  ])
 
   return NextResponse.json({ session_id: battle.id })
 }

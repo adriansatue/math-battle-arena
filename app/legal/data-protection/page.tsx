@@ -1,7 +1,8 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Data Protection – Math Battle Arena',
+  title: 'Data Protection & Privacy – Math Battle Arena',
+  description: 'How Math Battle Arena collects, uses, shares, and protects personal information.',
 }
 
 export default function DataProtectionPage() {
@@ -12,97 +13,153 @@ export default function DataProtectionPage() {
         <div className="space-y-2">
           <Link href="/lobby" className="text-purple-400 hover:text-purple-300 text-sm transition">← Back</Link>
           <h1 className="text-3xl font-black text-white">🔐 Data Protection &amp; Privacy</h1>
-          <p className="text-white/40 text-sm">Last updated: March 2026</p>
+          <p className="text-white/40 text-sm">Last updated: 16 August 2026</p>
+          <p className="max-w-xl text-sm leading-relaxed text-white/65">
+            This notice explains what personal information Math Battle Arena uses, why we use it,
+            and the choices and rights available to you.
+          </p>
         </div>
 
         <Section title="1. Who we are">
-          Math Battle Arena (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is the controller of personal data collected through this
-          Service. We are committed to protecting your personal data in accordance with the UK General
-          Data Protection Regulation (UK GDPR) and the Data Protection Act 2018.
+          Math Battle Arena (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is responsible for deciding how personal information
+          collected through the Service is used. In data protection law, this means we act as the data
+          controller. You can contact us at{' '}
+          <a href="mailto:privacy@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
+            privacy@mathbattlearena.com
+          </a>.
         </Section>
 
-        <Section title="2. What data we collect">
+        <Section title="2. Information we collect">
           <ul className="list-disc list-inside space-y-2 text-white/70">
-            <li><strong className="text-white/90">Account data</strong> — email address and username provided on registration.</li>
-            <li><strong className="text-white/90">Profile data</strong> — display name, total points, win/loss record, rank, and level.</li>
-            <li><strong className="text-white/90">Game data</strong> — battle history, answers submitted, scores, and card inventory.</li>
-            <li><strong className="text-white/90">Technical data</strong> — IP address, browser type, and session identifiers collected automatically by Supabase Auth.</li>
+            <li><strong className="text-white/90">Account information</strong> — email address, username, account identifier, login method, and authentication records.</li>
+            <li><strong className="text-white/90">Profile information</strong> — display name, XP, coins, rating, level, rank, streaks, and win/loss record.</li>
+            <li><strong className="text-white/90">Game and feature activity</strong> — battles, practice sessions, submitted answers, response times, scores, rewards, card inventory, feature views, and interactions such as opening answer review.</li>
+            <li><strong className="text-white/90">Technical and security information</strong> — IP address, browser or device information, session identifiers, and service logs.</li>
+            <li><strong className="text-white/90">Messages</strong> — information you include when contacting support or exercising a data protection right.</li>
+          </ul>
+          <p className="mt-3">Please do not include sensitive personal information in your username or support messages.</p>
+        </Section>
+
+        <Section title="3. Why we use it">
+          <ul className="list-disc list-inside space-y-2 text-white/70">
+            <li><strong className="text-white/90">Provide the Service</strong> — create your account, run games, calculate results, save progress, and deliver rewards.</li>
+            <li><strong className="text-white/90">Operate social features</strong> — show usernames, levels, ratings, and results on profiles and leaderboards.</li>
+            <li><strong className="text-white/90">Protect the Service</strong> — authenticate users and detect cheating, abuse, fraud, and technical failures.</li>
+            <li><strong className="text-white/90">Improve the Service</strong> — understand performance and improve game balance and reliability.</li>
+            <li><strong className="text-white/90">Communicate with you</strong> — answer support enquiries and data protection requests.</li>
           </ul>
         </Section>
 
-        <Section title="3. How we use your data">
-          We use your personal data to:
+        <Section title="4. Our legal bases">
+          Depending on the activity, we rely on:
           <ul className="list-disc list-inside mt-2 space-y-2 text-white/70">
-            <li>Provide, maintain, and improve the Service.</li>
-            <li>Authenticate you and keep your session secure.</li>
-            <li>Display leaderboard rankings and battle results.</li>
-            <li>Detect and prevent cheating or abuse.</li>
-            <li>Respond to support requests.</li>
+            <li><strong className="text-white/90">Contract</strong> — where information is needed to provide the account and game features you request.</li>
+            <li><strong className="text-white/90">Legitimate interests</strong> — to secure, maintain, understand, and improve the Service, provided those interests do not override your rights.</li>
+            <li><strong className="text-white/90">Legal obligation</strong> — where we must keep, use, or disclose information to comply with the law.</li>
           </ul>
         </Section>
 
-        <Section title="4. Legal basis for processing">
-          We process your personal data based on:
+        <Section title="5. Public information">
+          Your username, level, rank, rating, XP, and game statistics may be visible to other players on
+          profiles, leaderboards, battles, and results pages. Your email address, authentication details,
+          private performance breakdown, and support messages are not intended to be public. Do not use
+          your real name as a username unless you want it to be visible to other players.
+        </Section>
+
+        <Section title="6. Service providers and disclosures">
+          We do not sell personal information. We use service providers to operate hosting, databases,
+          authentication, security, and other technical infrastructure. They may process information only
+          to provide those services to us and under appropriate contractual safeguards. We may also
+          disclose information where required by law, to protect users or the Service, or in connection
+          with a reorganisation or transfer of the Service.
           <ul className="list-disc list-inside mt-2 space-y-2 text-white/70">
-            <li><strong className="text-white/90">Contract</strong> — processing necessary to provide the Service you signed up for.</li>
-            <li><strong className="text-white/90">Legitimate interests</strong> — fraud prevention, security, and service improvement.</li>
-            <li><strong className="text-white/90">Legal obligation</strong> — where required by applicable law.</li>
+            <li><strong className="text-white/90">Supabase</strong> provides database and authentication infrastructure.</li>
+            <li><strong className="text-white/90">Hosting and infrastructure providers</strong> deliver and protect the application.</li>
           </ul>
         </Section>
 
-        <Section title="5. Data storage and security">
-          Your data is stored securely on Supabase infrastructure hosted in the European Union. Supabase
-          implements industry-standard security measures including encryption in transit (TLS) and at rest.
-          We do not store payment card details.
+        <Section title="7. International transfers and security">
+          Our service providers may process information in countries outside the UK. Where data protection
+          law requires it, we use recognised safeguards for those transfers. We use technical and
+          organisational measures designed to protect personal information, including access controls and
+          encrypted connections. No online service can guarantee absolute security.
         </Section>
 
-        <Section title="6. Data sharing">
-          We do not sell, rent, or trade your personal data. We may share data with:
-          <ul className="list-disc list-inside mt-2 space-y-2 text-white/70">
-            <li><strong className="text-white/90">Supabase</strong> — our hosting and database provider, acting as a data processor.</li>
-            <li><strong className="text-white/90">Legal authorities</strong> — where required by law or court order.</li>
-          </ul>
+        <Section title="8. How long we keep information">
+          We keep account and game information while your account is active and for as long as reasonably
+          needed to operate the Service, resolve disputes, prevent abuse, maintain accurate records, and
+          meet legal obligations. Retention periods depend on the type of record and why it is needed.
+          Information is deleted or anonymised when it is no longer required. You may request account
+          deletion, subject to information we are permitted or required to retain.
         </Section>
 
-        <Section title="7. Data retention">
-          We retain your account data for as long as your account is active. Game history records are
-          retained for 12 months. You may request deletion of your account and associated data at any time.
-        </Section>
-
-        <Section title="8. Your rights">
-          Under UK GDPR you have the right to:
+        <Section title="9. Your data protection rights">
+          Depending on the circumstances, UK data protection law may give you the right to:
           <ul className="list-disc list-inside mt-2 space-y-2 text-white/70">
             <li><strong className="text-white/90">Access</strong> — request a copy of the personal data we hold about you.</li>
             <li><strong className="text-white/90">Rectification</strong> — ask us to correct inaccurate data.</li>
-            <li><strong className="text-white/90">Erasure</strong> — ask us to delete your personal data (&ldquo;right to be forgotten&rdquo;).</li>
+            <li><strong className="text-white/90">Erasure</strong> — ask us to delete personal data in certain circumstances.</li>
             <li><strong className="text-white/90">Restriction</strong> — ask us to limit how we use your data.</li>
-            <li><strong className="text-white/90">Portability</strong> — receive your data in a structured, machine-readable format.</li>
+            <li><strong className="text-white/90">Portability</strong> — receive certain information in a structured, machine-readable format.</li>
             <li><strong className="text-white/90">Objection</strong> — object to processing based on legitimate interests.</li>
           </ul>
-          To exercise any of these rights, contact us at{' '}
+          <p className="mt-3">
+          To exercise a right, contact us at{' '}
           <a href="mailto:privacy@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
             privacy@mathbattlearena.com
-          </a>. We will respond within 30 days.
+          </a>. We may need to verify your identity. We normally respond within one month, although the law
+          allows more time in some circumstances. These rights are not absolute and legal exemptions may apply.
+          </p>
         </Section>
 
-        <Section title="9. Cookies">
+        <Section title="10. Children">
+          If you are under 13, a parent or guardian should create and supervise your account. A parent or
+          guardian may contact us about a child&apos;s information or request that the child&apos;s account be deleted.
+          Users should avoid putting a child&apos;s real name or other identifying information in a public username.
+        </Section>
+
+        <Section title="11. Cookies">
           For information on how we use cookies, see our{' '}
           <Link href="/legal/cookies" className="text-purple-400 hover:text-purple-300 transition">
             Cookies Policy
           </Link>.
         </Section>
 
-        <Section title="10. Changes to this policy">
-          We may update this Data Protection policy from time to time. Any material changes will be
-          communicated via a notice on the Service. Continued use after changes constitutes acceptance.
+        <Section title="12. Changes to this notice">
+          We may update this notice when our practices, the Service, or applicable law changes. We will
+          update the date at the top and provide an appropriate notice where a change materially affects
+          how personal information is used.
         </Section>
 
-        <Section title="11. Complaints">
-          If you believe we have not handled your data correctly, you have the right to lodge a complaint
-          with the UK Information Commissioner&apos;s Office (ICO) at{' '}
-          <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 transition">
-            ico.org.uk
-          </a>.
+        <Section title="13. Questions and complaints">
+          <p>
+            For a concern about how we use your personal information or handle a data protection right,
+            please email{' '}
+            <a href="mailto:privacy@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
+              privacy@mathbattlearena.com
+            </a>{' '}
+            first so we have an opportunity to investigate and put things right.
+          </p>
+          <p>
+            If you remain dissatisfied with our handling of a personal information concern, you may be
+            entitled to complain to the UK Information Commissioner&apos;s Office. The ICO is the independent
+            UK data protection regulator. Its complaints process covers privacy and personal information;
+            it does not handle general gameplay, account, moderation, or customer-service disputes. Visit the{' '}
+            <a
+              href="https://ico.org.uk/make-a-complaint/data-complaints-complaints/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-purple-400 hover:text-purple-300 transition"
+            >
+              ICO data protection complaints page
+            </a>.
+          </p>
+          <p>
+            For a general question or complaint about the Service, contact{' '}
+            <a href="mailto:support@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
+              support@mathbattlearena.com
+            </a>.
+          </p>
         </Section>
 
         <Footer />

@@ -37,6 +37,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority:         0.7,
     },
     {
+      url:              `${SITE_URL}/levels-and-xp`,
+      lastModified:     now,
+      changeFrequency:  'monthly',
+      priority:         0.7,
+    },
+    {
       url:              `${SITE_URL}/rewards`,
       lastModified:     now,
       changeFrequency:  'monthly',

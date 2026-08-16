@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { DEFAULT_RATING, calculateBattleRewards, getRewardMode } from '@/lib/game/scoring'
+import { recordServerEvent } from '@/lib/events/server'
 
 export async function POST(
   request: Request,
@@ -28,17 +29,7 @@ export async function POST(
     return NextResponse.json({ error: 'Not a player in this battle' }, { status: 403 })
   }
 
-  if (battle.status === 'finished') {
-    // Battle already finished — return current scores without updating again
-    return NextResponse.json({
-      message: 'Battle already finished',
-      winner_id:   battle.winner_id,
-      host_score:  battle.host_score,
-      guest_score: battle.guest_score,
-    })
-  }
-
-  if (battle.status !== 'active') {
+  if (battle.status !== 'active' && battle.status !== 'finished') {
     return NextResponse.json({ error: 'Battle is not active' }, { status: 400 })
   }
 
@@ -83,33 +74,33 @@ export async function POST(
   // Atomic conditional update: only proceeds if battle is still 'active'.
   // Two concurrent finish calls can both read status='active' above, but only one
   // will succeed here — the other will find no rows updated and return early.
-  const { data: markedFinished } = await adminSupabase
-    .from('battles')
-    .update({
-      status:      'finished',
-      finished_at: new Date().toISOString(),
-      host_score:  hostScore,
-      guest_score: guestScore,
-      winner_id:   winnerId,
-    })
-    .eq('id', id)
-    .eq('status', 'active')   // only update if currently active (race-condition guard)
-    .select('id')
-    .single()
-
-  if (!markedFinished) {
-    // Another concurrent request already finished this battle — return stored values
-    const { data: existing } = await adminSupabase
+  if (battle.status === 'active') {
+    const { data: markedFinished, error: finishError } = await adminSupabase
       .from('battles')
-      .select('winner_id, host_score, guest_score')
+      .update({
+        status:      'finished',
+        finished_at: new Date().toISOString(),
+        host_score:  hostScore,
+        guest_score: guestScore,
+        winner_id:   winnerId,
+      })
       .eq('id', id)
+      .eq('status', 'active')
+      .select('id')
       .single()
-    return NextResponse.json({
-      message:     'Battle already finished',
-      winner_id:   existing?.winner_id   ?? null,
-      host_score:  existing?.host_score  ?? 0,
-      guest_score: existing?.guest_score ?? 0,
-    })
+
+    if (finishError && !markedFinished) {
+      const { data: concurrentlyFinished } = await adminSupabase
+        .from('battles')
+        .select('id')
+        .eq('id', id)
+        .eq('status', 'finished')
+        .maybeSingle()
+
+      if (!concurrentlyFinished) {
+        return NextResponse.json({ error: 'Failed to finish battle' }, { status: 500 })
+      }
+    }
   }
 
   // Settle card bet if active
@@ -177,7 +168,8 @@ export async function POST(
       opponentRating: opponentId ? ratingByPlayer[opponentId] ?? DEFAULT_RATING : DEFAULT_RATING,
     })
 
-    const { error: updateError } = await adminSupabase.rpc('apply_profile_battle_result', {
+    const { error: updateError } = await adminSupabase.rpc('settle_profile_battle_result', {
+      p_battle_id:      id,
       p_profile_id:     playerId,
       p_earned_xp:      rewards.xpEarned,
       p_earned_coins:   rewards.coinsEarned,
@@ -189,7 +181,68 @@ export async function POST(
 
     if (updateError) {
       console.error(`[finish] profile update error for ${playerId}:`, updateError)
-      return NextResponse.json({ error: `Failed to update profile: ${updateError.message}` }, { status: 500 })
+      return NextResponse.json({ error: `Failed to settle rewards: ${updateError.message}` }, { status: 500 })
+    }
+  }
+
+  const durationSeconds = battle.started_at
+    ? Math.max(0, Math.round((Date.now() - new Date(battle.started_at).getTime()) / 1000))
+    : null
+
+  await Promise.all(playerIds.flatMap(playerId => {
+    const playerScore = totals[playerId] ?? 0
+    const result = rewardMode === 'practice'
+      ? 'completed'
+      : winnerId === null
+        ? 'draw'
+        : winnerId === playerId
+          ? 'win'
+          : 'loss'
+    const events = [recordServerEvent({
+      userId: playerId,
+      eventName: 'battle_finished',
+      dedupKey: `battle:${id}:finished`,
+      battleId: id,
+      properties: {
+        mode: rewardMode,
+        difficulty: battle.difficulty,
+        result,
+        score: playerScore,
+        answer_count: answerCounts[playerId] ?? 0,
+        duration_seconds: durationSeconds,
+        opponent_type: battle.bot_id ? 'bot' : rewardMode === 'practice' ? 'none' : 'human',
+      },
+    })]
+
+    if (rewardMode === 'practice') {
+      events.push(recordServerEvent({
+        userId: playerId,
+        eventName: 'practice_finished',
+        dedupKey: `practice:${id}:finished`,
+        battleId: id,
+        properties: {
+          difficulty: battle.difficulty,
+          score: playerScore,
+          answer_count: answerCounts[playerId] ?? 0,
+          duration_seconds: durationSeconds,
+        },
+      }))
+    }
+
+    return events
+  }))
+
+  let practiceSummary = null
+  if (rewardMode === 'practice') {
+    const { data, error: practiceError } = await adminSupabase.rpc('complete_focused_practice', {
+      p_battle_id: id,
+      p_user_id: battle.host_id,
+    })
+
+    if (practiceError) {
+      console.error(`[finish] practice summary error for ${id}:`, practiceError)
+    } else {
+      practiceSummary = Array.isArray(data) ? data[0] ?? null : data
     }
   }
 
@@ -197,5 +250,6 @@ export async function POST(
     winner_id:   winnerId,
     host_score:  hostScore,
     guest_score: guestScore,
+    practice_summary: practiceSummary,
   })
 }

@@ -6,6 +6,7 @@ import type { Difficulty } from '@/lib/game/questions'
 import { isUniqueViolation } from '@/lib/supabase/errors'
 import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
 import { DEFAULT_RATING } from '@/lib/game/scoring'
+import { recordServerEvent } from '@/lib/events/server'
 
 const MODES = ['realtime', 'turnbased'] as const
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
@@ -104,6 +105,13 @@ async function addUserToQueue(
   if (error && !isUniqueViolation(error)) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  await recordServerEvent({
+    userId,
+    eventName: 'matchmaking_started',
+    dedupKey: `queue:${mode}:${difficulty}:${Date.now()}`,
+    properties: { mode, difficulty, queued: true },
+  })
 
   return NextResponse.json({
     matched: false,
@@ -239,6 +247,36 @@ export async function POST(request: Request) {
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
+
+  await Promise.all([
+    recordServerEvent({
+      userId: user.id,
+      eventName: 'matchmaking_started',
+      dedupKey: `battle:${battle.id}:matchmaking`,
+      battleId: battle.id,
+      properties: { mode, difficulty, queued: false },
+    }),
+    ...[user.id, opponent.user_id].map(playerId => recordServerEvent({
+      userId: playerId,
+      eventName: 'match_found',
+      dedupKey: `battle:${battle.id}:match`,
+      battleId: battle.id,
+      properties: {
+        mode,
+        difficulty,
+        rating_diff: Math.round(match.ratingDiff),
+        level_diff: match.levelDiff,
+        wait_ms: Math.round(match.waitMs),
+      },
+    })),
+    ...[user.id, opponent.user_id].map(playerId => recordServerEvent({
+      userId: playerId,
+      eventName: 'battle_started',
+      dedupKey: `battle:${battle.id}:started`,
+      battleId: battle.id,
+      properties: { mode, difficulty, question_count: 10, opponent_type: 'human' },
+    })),
+  ])
 
   return NextResponse.json({
     matched:    true,

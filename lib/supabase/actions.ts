@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { escapeLikePattern, isUsernameConflict } from '@/lib/supabase/usernames'
+import { recordServerEvent } from '@/lib/events/server'
 
 // ── SIGN UP ───────────────────────────────────
 export async function signUp(formData: FormData) {
@@ -23,7 +25,7 @@ export async function signUp(formData: FormData) {
   const { data: existing } = await adminSupabase
     .from('profiles')
     .select('id')
-    .eq('username', username)
+    .ilike('username', escapeLikePattern(username))
     .single()
 
   if (existing) {
@@ -46,6 +48,15 @@ export async function signUp(formData: FormData) {
   // Supabase will surface a unique-constraint violation as error code '23505'.
   if (!data.session && !data.user) {
     return { error: 'Signup failed. The username or email may already be in use.' }
+  }
+
+  if (data.user) {
+    await recordServerEvent({
+      userId: data.user.id,
+      eventName: 'account_started',
+      dedupKey: `account:${data.user.id}`,
+      properties: { account_type: 'registered', auth_method: 'email' },
+    })
   }
 
   // Email confirmation is disabled in Supabase — session is returned immediately.
@@ -124,12 +135,13 @@ export async function updatePassword(formData: FormData) {
 }
 
 // ── GOOGLE OAUTH ──────────────────────────────
-export async function signInWithGoogle() {
+export async function signInWithGoogle(next = '/lobby') {
   const supabase = await createClient()
+  const safePath = next.startsWith('/') && !next.startsWith('//') ? next : '/lobby'
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=${encodeURIComponent(safePath)}`,
     },
   })
   if (error || !data.url) return { error: 'Could not sign in with Google. Please try again.' }
@@ -153,7 +165,7 @@ export async function saveUsername(formData: FormData) {
   const { data: existing } = await adminSupabase
     .from('profiles')
     .select('id')
-    .eq('username', username)
+    .ilike('username', escapeLikePattern(username))
     .neq('id', user.id)
     .single()
   if (existing) return { error: 'Username is already taken. Try another one!' }
@@ -162,10 +174,53 @@ export async function saveUsername(formData: FormData) {
     .from('profiles')
     .update({ username, username_customized: true })
     .eq('id', user.id)
+  if (isUsernameConflict(updateError)) return { error: 'Username is already taken. Try another one!' }
   if (updateError) return { error: 'Could not save username. Please try again.' }
 
   revalidatePath('/', 'layout')
   redirect('/lobby')
+}
+
+// ── CHANGE USERNAME (once per account) ────────
+export async function changeUsername(formData: FormData) {
+  const supabase = await createClient()
+  const adminSupabase = createAdminClient()
+  const username = (formData.get('username') as string ?? '').trim()
+
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    return { error: 'Username must be 3–20 characters: letters, numbers, or underscores.' }
+  }
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const { data: profile } = await adminSupabase
+    .from('profiles')
+    .select('username_customized')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.username_customized) {
+    return { error: 'You have already used your free username change.' }
+  }
+
+  const { data: existing } = await adminSupabase
+    .from('profiles')
+    .select('id')
+    .ilike('username', escapeLikePattern(username))
+    .neq('id', user.id)
+    .single()
+  if (existing) return { error: 'Username is already taken. Try another one!' }
+
+  const { error: updateError } = await adminSupabase
+    .from('profiles')
+    .update({ username, username_customized: true })
+    .eq('id', user.id)
+  if (isUsernameConflict(updateError)) return { error: 'Username is already taken. Try another one!' }
+  if (updateError) return { error: 'Could not update username. Please try again.' }
+
+  revalidatePath('/', 'layout')
+  redirect(`/profile/${user.id}`)
 }
 
 // ── LOGOUT ────────────────────────────────────

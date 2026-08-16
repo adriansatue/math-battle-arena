@@ -174,3 +174,365 @@ FROM battles b
 WHERE b.finished_at < b.created_at
    OR b.finished_at IS NULL
 ORDER BY b.created_at DESC;
+
+-- ============================================================================
+-- PHASE 0: FIRST-PARTY PRODUCT FUNNEL AND RETENTION
+-- Excludes bot profiles. Add other known test-account IDs to excluded_users.
+-- ============================================================================
+
+-- 8. CORE FUNNEL, UNIQUE PLAYERS IN THE LAST 14 DAYS
+WITH excluded_users AS (
+  SELECT id
+  FROM profiles
+  WHERE rank_title = 'AI Challenger' OR username ILIKE '%MathBot%'
+), funnel_steps(event_name, step_order) AS (
+  VALUES
+    ('account_started', 1),
+    ('lobby_viewed', 2),
+    ('matchmaking_started', 3),
+    ('match_found', 4),
+    ('battle_started', 5),
+    ('battle_finished', 6),
+    ('results_viewed', 7)
+), counts AS (
+  SELECT event_name, COUNT(DISTINCT user_id) AS players
+  FROM product_events
+  WHERE occurred_at >= NOW() - INTERVAL '14 days'
+    AND user_id NOT IN (SELECT id FROM excluded_users)
+  GROUP BY event_name
+)
+SELECT
+  fs.step_order,
+  fs.event_name,
+  COALESCE(c.players, 0) AS players,
+  ROUND(
+    100.0 * COALESCE(c.players, 0)
+    / NULLIF(FIRST_VALUE(COALESCE(c.players, 0)) OVER (ORDER BY fs.step_order), 0),
+    1
+  ) AS percent_of_first_step
+FROM funnel_steps fs
+LEFT JOIN counts c USING (event_name)
+ORDER BY fs.step_order;
+
+-- 9. STARTED BATTLE COMPLETION RATE AND BATTLES PER SESSION, LAST 14 DAYS
+WITH eligible_events AS (
+  SELECT pe.*
+  FROM product_events pe
+  LEFT JOIN profiles p ON p.id = pe.user_id
+  WHERE pe.occurred_at >= NOW() - INTERVAL '14 days'
+    AND COALESCE(p.rank_title, '') != 'AI Challenger'
+    AND COALESCE(p.username, '') NOT ILIKE '%MathBot%'
+), battle_activity AS (
+  SELECT
+    user_id,
+    battle_id,
+    occurred_at,
+    CASE
+      WHEN occurred_at - LAG(occurred_at) OVER (PARTITION BY user_id ORDER BY occurred_at) > INTERVAL '30 minutes'
+        OR LAG(occurred_at) OVER (PARTITION BY user_id ORDER BY occurred_at) IS NULL
+      THEN 1 ELSE 0
+    END AS starts_session
+  FROM eligible_events
+  WHERE event_name = 'battle_started'
+), sessionized AS (
+  SELECT
+    *,
+    SUM(starts_session) OVER (PARTITION BY user_id ORDER BY occurred_at) AS inferred_session
+  FROM battle_activity
+), session_counts AS (
+  SELECT user_id, inferred_session, COUNT(DISTINCT battle_id) AS battles
+  FROM sessionized
+  GROUP BY user_id, inferred_session
+)
+SELECT
+  COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'battle_started') AS battles_started,
+  COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'battle_finished') AS battles_finished,
+  ROUND(
+    100.0 * COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'battle_finished')
+    / NULLIF(COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'battle_started'), 0),
+    1
+  ) AS completion_rate_percent,
+  (SELECT ROUND(AVG(battles), 2) FROM session_counts) AS avg_battles_per_inferred_session
+FROM eligible_events;
+
+-- 10. RESULTS ENGAGEMENT RATES, LAST 14 DAYS
+WITH per_battle AS (
+  SELECT
+    user_id,
+    battle_id,
+    BOOL_OR(event_name = 'results_viewed') AS viewed_results,
+    BOOL_OR(event_name = 'answer_review_opened') AS opened_review
+  FROM product_events
+  WHERE occurred_at >= NOW() - INTERVAL '14 days'
+    AND event_name IN ('results_viewed', 'answer_review_opened')
+  GROUP BY user_id, battle_id
+)
+SELECT
+  COUNT(*) FILTER (WHERE viewed_results) AS results_views,
+  COUNT(*) FILTER (WHERE opened_review) AS review_opens,
+  ROUND(
+    100.0 * COUNT(*) FILTER (WHERE opened_review)
+    / NULLIF(COUNT(*) FILTER (WHERE viewed_results), 0),
+    1
+  ) AS answer_review_open_rate_percent
+FROM per_battle;
+
+-- 11. NEXT-DAY AND SEVEN-DAY RETURN BY FIRST OBSERVED ACTIVE DATE
+WITH active_days AS (
+  SELECT DISTINCT user_id, occurred_at::date AS active_date
+  FROM product_events
+  WHERE event_name IN ('lobby_viewed', 'battle_started', 'practice_started')
+), cohorts AS (
+  SELECT user_id, MIN(active_date) AS cohort_date
+  FROM active_days
+  GROUP BY user_id
+), mature_cohorts AS (
+  SELECT * FROM cohorts WHERE cohort_date <= CURRENT_DATE - 7
+)
+SELECT
+  cohort_date,
+  COUNT(*) AS new_players,
+  ROUND(100.0 * COUNT(*) FILTER (
+    WHERE EXISTS (
+      SELECT 1 FROM active_days ad
+      WHERE ad.user_id = mc.user_id AND ad.active_date = mc.cohort_date + 1
+    )
+  ) / NULLIF(COUNT(*), 0), 1) AS next_day_return_percent,
+  ROUND(100.0 * COUNT(*) FILTER (
+    WHERE EXISTS (
+      SELECT 1 FROM active_days ad
+      WHERE ad.user_id = mc.user_id AND ad.active_date = mc.cohort_date + 7
+    )
+  ) / NULLIF(COUNT(*), 0), 1) AS day_7_return_percent
+FROM mature_cohorts mc
+GROUP BY cohort_date
+ORDER BY cohort_date DESC;
+
+-- 12. PRACTICE WITHIN 24 HOURS AFTER VIEWING A PROFILE INSIGHT
+WITH insight_views AS (
+  SELECT user_id, occurred_at
+  FROM product_events
+  WHERE event_name = 'profile_insight_viewed'
+    AND occurred_at >= NOW() - INTERVAL '14 days'
+)
+SELECT
+  COUNT(*) AS insight_views,
+  COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1
+    FROM product_events practice
+    WHERE practice.user_id = insight_views.user_id
+      AND practice.event_name = 'practice_started'
+      AND practice.occurred_at > insight_views.occurred_at
+      AND practice.occurred_at <= insight_views.occurred_at + INTERVAL '24 hours'
+  )) AS followed_by_practice,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1
+    FROM product_events practice
+    WHERE practice.user_id = insight_views.user_id
+      AND practice.event_name = 'practice_started'
+      AND practice.occurred_at > insight_views.occurred_at
+      AND practice.occurred_at <= insight_views.occurred_at + INTERVAL '24 hours'
+  )) / NULLIF(COUNT(*), 0), 1) AS practice_after_insight_percent
+FROM insight_views;
+
+-- 13. MATCHMAKING ABANDONMENT: QUEUED ATTEMPTS WITHOUT A MATCH WITHIN 10 MINUTES
+WITH queued AS (
+  SELECT user_id, occurred_at
+  FROM product_events
+  WHERE event_name = 'matchmaking_started'
+    AND properties->>'queued' = 'true'
+    AND occurred_at >= NOW() - INTERVAL '14 days'
+)
+SELECT
+  COUNT(*) AS queued_attempts,
+  COUNT(*) FILTER (WHERE NOT EXISTS (
+    SELECT 1
+    FROM product_events matched
+    WHERE matched.user_id = queued.user_id
+      AND matched.event_name IN ('match_found', 'bot_fallback_started')
+      AND matched.occurred_at >= queued.occurred_at
+      AND matched.occurred_at <= queued.occurred_at + INTERVAL '10 minutes'
+  )) AS abandoned_attempts,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE NOT EXISTS (
+    SELECT 1
+    FROM product_events matched
+    WHERE matched.user_id = queued.user_id
+      AND matched.event_name IN ('match_found', 'bot_fallback_started')
+      AND matched.occurred_at >= queued.occurred_at
+      AND matched.occurred_at <= queued.occurred_at + INTERVAL '10 minutes'
+  )) / NULLIF(COUNT(*), 0), 1) AS abandonment_rate_percent
+FROM queued;
+
+-- 14. PLAY AGAIN AND GUEST-UPGRADE RATES, LAST 14 DAYS
+SELECT
+  COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'results_viewed') AS viewed_results,
+  COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'play_again_clicked') AS play_again_clicks,
+  ROUND(
+    100.0 * COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'play_again_clicked')
+    / NULLIF(COUNT(DISTINCT battle_id) FILTER (WHERE event_name = 'results_viewed'), 0),
+    1
+  ) AS play_again_rate_percent,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'account_started' AND properties->>'account_type' = 'anonymous'
+  ) AS guest_accounts_started,
+  COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'guest_upgraded') AS guests_upgraded,
+  ROUND(
+    100.0 * COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'guest_upgraded')
+    / NULLIF(COUNT(DISTINCT user_id) FILTER (
+      WHERE event_name = 'account_started' AND properties->>'account_type' = 'anonymous'
+    ), 0),
+    1
+  ) AS guest_upgrade_rate_percent
+FROM product_events
+WHERE occurred_at >= NOW() - INTERVAL '14 days';
+
+-- Recommended-practice and true rematch rates remain unavailable until those
+-- product actions exist; Play Again intentionally remains a separate event.
+
+-- 15. NEW ACCOUNTS THAT START A FIRST BATTLE WITHIN 24 HOURS, LAST 14 DAYS
+WITH new_accounts AS (
+  SELECT user_id, MIN(occurred_at) AS started_at
+  FROM product_events
+  WHERE event_name = 'account_started'
+    AND occurred_at >= NOW() - INTERVAL '14 days'
+  GROUP BY user_id
+)
+SELECT
+  COUNT(*) AS new_accounts,
+  COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1
+    FROM product_events battle
+    WHERE battle.user_id = new_accounts.user_id
+      AND battle.event_name = 'battle_started'
+      AND battle.occurred_at >= new_accounts.started_at
+      AND battle.occurred_at <= new_accounts.started_at + INTERVAL '24 hours'
+  )) AS started_first_battle,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1
+    FROM product_events battle
+    WHERE battle.user_id = new_accounts.user_id
+      AND battle.event_name = 'battle_started'
+      AND battle.occurred_at >= new_accounts.started_at
+      AND battle.occurred_at <= new_accounts.started_at + INTERVAL '24 hours'
+  )) / NULLIF(COUNT(*), 0), 1) AS first_battle_within_24h_percent
+FROM new_accounts;
+
+-- ============================================================================
+-- PHASE 2: FOCUSED PRACTICE AND IMPROVEMENT
+-- Baseline: latest 20 unflagged answers in the same topic before each session.
+-- ============================================================================
+
+-- 16. RECOMMENDATION-TO-PRACTICE CONVERSION AND COMPLETION, LAST 14 DAYS
+WITH recommendations AS (
+  SELECT user_id, occurred_at, properties->>'topic' AS topic
+  FROM product_events
+  WHERE event_name = 'recommended_practice_clicked'
+    AND occurred_at >= NOW() - INTERVAL '14 days'
+), converted AS (
+  SELECT
+    recommendation.*,
+    (
+      SELECT ps.battle_id
+      FROM practice_sessions ps
+      WHERE ps.user_id = recommendation.user_id
+        AND ps.topic = recommendation.topic
+        AND ps.created_at >= recommendation.occurred_at
+        AND ps.created_at <= recommendation.occurred_at + INTERVAL '30 minutes'
+      ORDER BY ps.created_at
+      LIMIT 1
+    ) AS practice_battle_id
+  FROM recommendations recommendation
+)
+SELECT
+  COUNT(*) AS recommendation_clicks,
+  COUNT(practice_battle_id) AS practice_starts,
+  COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM practice_sessions ps
+    WHERE ps.battle_id = converted.practice_battle_id AND ps.completed_at IS NOT NULL
+  )) AS practice_completions,
+  ROUND(100.0 * COUNT(practice_battle_id) / NULLIF(COUNT(*), 0), 1) AS start_rate_percent,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM practice_sessions ps
+    WHERE ps.battle_id = converted.practice_battle_id AND ps.completed_at IS NOT NULL
+  )) / NULLIF(COUNT(practice_battle_id), 0), 1) AS completion_rate_percent
+FROM converted;
+
+-- 17. FOCUSED PRACTICE ACCURACY CHANGE AND REPEAT RATE, LAST 14 DAYS
+SELECT
+  topic,
+  COUNT(*) AS completed_sessions,
+  ROUND(AVG(100.0 * session_correct / NULLIF(session_attempts, 0)), 1) AS session_accuracy_percent,
+  ROUND(AVG(
+    100.0 * session_correct / NULLIF(session_attempts, 0)
+    - 100.0 * baseline_correct / NULLIF(baseline_attempts, 0)
+  ) FILTER (WHERE baseline_attempts >= 5 AND session_attempts >= 5), 1) AS avg_accuracy_change_points,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM practice_sessions repeated
+    WHERE repeated.user_id = practice_sessions.user_id
+      AND repeated.topic = practice_sessions.topic
+      AND repeated.created_at > practice_sessions.completed_at
+      AND repeated.created_at <= practice_sessions.completed_at + INTERVAL '24 hours'
+  )) / NULLIF(COUNT(*), 0), 1) AS repeat_within_24h_percent
+FROM practice_sessions
+WHERE completed_at >= NOW() - INTERVAL '14 days'
+GROUP BY topic
+ORDER BY completed_sessions DESC;
+
+-- 18. RETURN TO BATTLE AFTER FOCUSED PRACTICE, LAST 14 DAYS
+SELECT
+  COUNT(*) AS completed_practice_sessions,
+  COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1
+    FROM battles battle
+    WHERE (battle.host_id = ps.user_id OR battle.guest_id = ps.user_id)
+      AND battle.guest_id IS NOT NULL
+      AND battle.started_at > ps.completed_at
+      AND battle.started_at <= ps.completed_at + INTERVAL '24 hours'
+  )) AS battled_within_24h,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1
+    FROM battles battle
+    WHERE (battle.host_id = ps.user_id OR battle.guest_id = ps.user_id)
+      AND battle.guest_id IS NOT NULL
+      AND battle.started_at > ps.completed_at
+      AND battle.started_at <= ps.completed_at + INTERVAL '24 hours'
+  )) / NULLIF(COUNT(*), 0), 1) AS battle_return_rate_percent
+FROM practice_sessions ps
+WHERE ps.completed_at >= NOW() - INTERVAL '14 days';
+
+-- 19. LATER BATTLE IMPROVEMENT IN THE PRACTISED TOPIC
+WITH later_battle_answers AS (
+  SELECT
+    ps.battle_id AS practice_battle_id,
+    ps.user_id,
+    ps.topic,
+    ps.baseline_attempts,
+    ps.baseline_correct,
+    COUNT(*) AS later_attempts,
+    COUNT(*) FILTER (WHERE ba.is_correct) AS later_correct
+  FROM practice_sessions ps
+  JOIN battles battle
+    ON (battle.host_id = ps.user_id OR battle.guest_id = ps.user_id)
+   AND battle.guest_id IS NOT NULL
+   AND battle.started_at > ps.completed_at
+   AND battle.started_at <= ps.completed_at + INTERVAL '7 days'
+  JOIN battle_answers ba ON ba.battle_id = battle.id AND ba.player_id = ps.user_id
+  JOIN battle_questions bq ON bq.id = ba.question_id AND bq.category = ps.topic
+  WHERE ps.completed_at >= NOW() - INTERVAL '21 days'
+    AND ps.baseline_attempts >= 5
+    AND COALESCE(ba.flagged, false) = false
+  GROUP BY ps.battle_id, ps.user_id, ps.topic, ps.baseline_attempts, ps.baseline_correct
+)
+SELECT
+  COUNT(*) AS practices_with_later_topic_evidence,
+  COUNT(*) FILTER (WHERE
+    later_attempts >= 3
+    AND later_correct::numeric / later_attempts
+      > baseline_correct::numeric / baseline_attempts
+  ) AS later_improved,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE
+    later_attempts >= 3
+    AND later_correct::numeric / later_attempts
+      > baseline_correct::numeric / baseline_attempts
+  ) / NULLIF(COUNT(*) FILTER (WHERE later_attempts >= 3), 0), 1) AS later_improvement_percent
+FROM later_battle_answers;

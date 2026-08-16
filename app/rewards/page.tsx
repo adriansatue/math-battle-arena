@@ -1,7 +1,7 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import RewardsClient from './RewardsClient'
+import RewardsAuthPrompt from './RewardsAuthPrompt'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,9 +22,16 @@ type InventoryRow = {
 export default async function RewardsPage() {
   const supabase = await createClient()
   const admin    = createAdminClient()
+  const fetchTotalCards = () => admin
+    .from('reward_catalog')
+    .select('*', { count: 'exact', head: true })
+    .eq('is_active', true)
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  if (!user) {
+    const { count: totalCards } = await fetchTotalCards()
+    return <RewardsAuthPrompt totalCards={totalCards ?? 0} />
+  }
 
   const [{ data: profile }, { data: inv, error: invError }, { count: totalCards }] = await Promise.all([
     admin
@@ -44,10 +51,7 @@ export default async function RewardsPage() {
       `)
       .eq('user_id', user.id)
       .order('obtained_at', { ascending: false }),
-    admin
-      .from('reward_catalog')
-      .select('*', { count: 'exact', head: true })
-      .eq('is_active', true),
+    fetchTotalCards(),
   ])
 
   if (invError) console.error('[RewardsPage] inv error:', invError.message)

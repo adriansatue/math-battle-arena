@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { recordServerEvent } from '@/lib/events/server'
 
 type PackType = 'basic' | 'rare' | 'legendary'
 type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary'
@@ -235,6 +236,20 @@ export async function POST(request: Request) {
     console.error('[open-pack] insert error:', insertError)
     return NextResponse.json({ error: 'Failed to save cards: ' + insertError.message }, { status: 500 })
   }
+
+  await recordServerEvent({
+    userId: user.id,
+    eventName: 'pack_opened',
+    dedupKey: `pack:${crypto.randomUUID()}`,
+    properties: {
+      pack_type,
+      cost: config.cost,
+      net_cost: netCost,
+      duplicate_count: picks.filter(card => ownedRewardIds.has(card.id)).length,
+      duplicate_refund: duplicateRefund,
+      legendary_count: picks.filter(card => card.rarity === 'legendary').length,
+    },
+  })
 
   return NextResponse.json({
     cards: picks.map((c, i) => ({

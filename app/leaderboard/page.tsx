@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { WIN_XP_BONUS, getRewardMode } from '@/lib/game/scoring'
+import { WIN_XP_BONUS, getLevelAndRank, getRewardMode } from '@/lib/game/scoring'
 
 interface Player {
   id:            string
@@ -17,22 +17,41 @@ interface Player {
   best_streak:   number
 }
 
-type Bracket = 'all' | 'beginner' | 'rising' | 'champion'
+type Bracket = 'all' | 'starter' | 'builder' | 'challenger' | 'solver' | 'strategist' | 'specialist' | 'expert' | 'contender' | 'elite' | 'master'
 type TimePeriod = 'alltime' | 'weekly' | 'rating'
 
 const BRACKETS: { key: Bracket; label: string; emoji: string; desc: string; min: number; max: number }[] = [
-  { key: 'beginner',  label: 'Beginners',    emoji: '🌱', desc: 'Level 1–2',  min: 1, max: 2 },
-  { key: 'rising',    label: 'Rising Stars', emoji: '⭐', desc: 'Level 3–5',  min: 3, max: 5 },
-  { key: 'champion',  label: 'Champions',    emoji: '🔥', desc: 'Level 6–8',  min: 6, max: 8 },
-  { key: 'all',       label: 'All Players',  emoji: '🌍', desc: 'Everyone',   min: 1, max: 99 },
+  { key: 'starter',    label: 'Starter',     emoji: 'I',    desc: 'Lv. 1-10',   min: 1,  max: 10 },
+  { key: 'builder',    label: 'Builder',     emoji: 'II',   desc: 'Lv. 11-20',  min: 11, max: 20 },
+  { key: 'challenger', label: 'Challenger',  emoji: 'III',  desc: 'Lv. 21-30',  min: 21, max: 30 },
+  { key: 'solver',     label: 'Solver',      emoji: 'IV',   desc: 'Lv. 31-40',  min: 31, max: 40 },
+  { key: 'strategist', label: 'Strategist',  emoji: 'V',    desc: 'Lv. 41-50',  min: 41, max: 50 },
+  { key: 'specialist', label: 'Specialist',  emoji: 'VI',   desc: 'Lv. 51-60',  min: 51, max: 60 },
+  { key: 'expert',     label: 'Expert',      emoji: 'VII',  desc: 'Lv. 61-70',  min: 61, max: 70 },
+  { key: 'contender',  label: 'Contender',   emoji: 'VIII', desc: 'Lv. 71-80',  min: 71, max: 80 },
+  { key: 'elite',      label: 'Elite',       emoji: 'IX',   desc: 'Lv. 81-90',  min: 81, max: 90 },
+  { key: 'master',     label: 'Master',      emoji: 'X',    desc: 'Lv. 91-100', min: 91, max: 100 },
+  { key: 'all',        label: 'All Players', emoji: 'All',  desc: 'Everyone',   min: 1,  max: 100 },
 ]
+
+function withComputedProgress(player: Player): Player {
+  const progress = getLevelAndRank(player.total_points ?? 0)
+  return {
+    ...player,
+    level:      progress.level,
+    rank_title: progress.rank_title,
+  }
+}
 
 export default function LeaderboardPage() {
   const [players,      setPlayers]      = useState<Player[]>([])
   const [loading,      setLoading]      = useState(true)
   const [currentId,    setCurrentId]    = useState('')
+  const [currentLevel, setCurrentLevel] = useState<number | null>(null)
   const [bracket,      setBracket]      = useState<Bracket>('all')
   const [timePeriod,   setTimePeriod]   = useState<TimePeriod>('alltime')
+  const [searchTerm,   setSearchTerm]   = useState('')
+  const [nearMyLevel,  setNearMyLevel]  = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -41,6 +60,15 @@ export default function LeaderboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setCurrentId(user.id)
+        const { data: currentProfile } = await supabase
+          .from('profiles')
+          .select('total_points')
+          .eq('id', user.id)
+          .single()
+
+        if (currentProfile) {
+          setCurrentLevel(getLevelAndRank(currentProfile.total_points ?? 0).level)
+        }
       }
 
       if (timePeriod === 'alltime') {
@@ -53,7 +81,7 @@ export default function LeaderboardPage() {
           .order('total_points', { ascending: false })
           .limit(50)
 
-        setPlayers((data as Player[]) ?? [])
+        setPlayers(((data as Player[] | null) ?? []).map(withComputedProgress))
       } else if (timePeriod === 'rating') {
         const { data } = await supabase
           .from('profiles')
@@ -63,7 +91,7 @@ export default function LeaderboardPage() {
           .order('rating', { ascending: false })
           .limit(50)
 
-        setPlayers((data as Player[]) ?? [])
+        setPlayers(((data as Player[] | null) ?? []).map(withComputedProgress))
       } else {
         // Fetch weekly leaderboard (last 7 days)
         const sevenDaysAgo = new Date()
@@ -121,17 +149,20 @@ export default function LeaderboardPage() {
         // Build weekly leaderboard
         const weeklyPlayers = allProfiles
           .filter(p => weeklyPoints[p.id] && weeklyPoints[p.id] > 0)
-          .map(p => ({
-            id: p.id,
-            username: p.username,
-            total_points: weeklyPoints[p.id] ?? 0,
-            rating: p.rating ?? 1000,
-            level: p.level,
-            rank_title: p.rank_title,
-            wins: p.wins,
-            losses: p.losses,
-            best_streak: p.best_streak,
-          }))
+          .map(p => {
+            const progress = getLevelAndRank(p.total_points ?? 0)
+            return {
+              id: p.id,
+              username: p.username,
+              total_points: weeklyPoints[p.id] ?? 0,
+              rating: p.rating ?? 1000,
+              level: progress.level,
+              rank_title: progress.rank_title,
+              wins: p.wins,
+              losses: p.losses,
+              best_streak: p.best_streak,
+            }
+          })
           .sort((a, b) => b.total_points - a.total_points)
           .slice(0, 50)
 
@@ -147,16 +178,26 @@ export default function LeaderboardPage() {
     i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`
 
   const levelColor = (level: number) =>
-    level >= 8 ? 'text-yellow-400' :
-    level >= 6 ? 'text-purple-400' :
-    level >= 4 ? 'text-blue-400'   :
-    level >= 2 ? 'text-green-400'  : 'text-gray-400'
+    level >= 91 ? 'text-yellow-400' :
+    level >= 71 ? 'text-purple-400' :
+    level >= 51 ? 'text-blue-400'   :
+    level >= 31 ? 'text-green-400'  : 'text-gray-400'
 
   const activeBracket = BRACKETS.find(b => b.key === bracket)!
-  const filtered = bracket === 'all'
+  const tierFiltered = bracket === 'all'
     ? players
     : players.filter(p => p.level >= activeBracket.min && p.level <= activeBracket.max)
-  const scoreLabel = timePeriod === 'rating' ? 'rating' : 'pts'
+  const nearbyFiltered = nearMyLevel && currentLevel
+    ? tierFiltered.filter(p => Math.abs(p.level - currentLevel) <= 10)
+    : tierFiltered
+  const normalizedSearch = searchTerm.trim().toLowerCase()
+  const filtered = normalizedSearch
+    ? nearbyFiltered.filter(p => p.username.toLowerCase().includes(normalizedSearch))
+    : nearbyFiltered
+  const emptyFilterLabel = nearMyLevel && currentLevel
+    ? `players near level ${currentLevel}`
+    : activeBracket.label
+  const scoreLabel = timePeriod === 'rating' ? 'rating' : 'XP'
   const scoreValue = (player: Player) =>
     timePeriod === 'rating' ? player.rating ?? 1000 : player.total_points
 
@@ -216,36 +257,77 @@ export default function LeaderboardPage() {
           </button>
         </div>
 
-        {/* Bracket filter tabs */}
-        <div className="grid grid-cols-4 gap-2 mb-6">
-          {BRACKETS.map(b => (
+        {/* Filters */}
+        <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+          <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold uppercase tracking-widest text-white/35">
+                Search player
+              </span>
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Username"
+                className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/25 focus:border-purple-400/60"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold uppercase tracking-widest text-white/35">
+                Level tier
+              </span>
+              <span className="relative block rounded-xl focus-within:ring-2 focus-within:ring-purple-400/25">
+                <select
+                  value={bracket}
+                  onChange={(event) => setBracket(event.target.value as Bracket)}
+                  className="w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-black/20 py-3 pl-4 pr-11 text-sm font-bold text-white outline-none transition hover:border-purple-300/30 hover:bg-white/[0.06] focus:border-purple-400/60"
+                >
+                  {BRACKETS.map(b => (
+                    <option key={b.key} value={b.key} className="bg-slate-950 text-white">
+                      {b.label}
+                    </option>
+                  ))}
+                </select>
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-4 top-1/2 h-2.5 w-2.5 -translate-y-2/3 rotate-45 border-b-2 border-r-2 border-purple-200/80"
+                />
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <button
-              key={b.key}
-              onClick={() => setBracket(b.key)}
-              className={`flex flex-col items-center gap-0.5 py-2.5 px-1 rounded-xl border transition-all ${
-                bracket === b.key
-                  ? 'bg-purple-600/40 border-purple-400/60 text-white'
-                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80'
+              onClick={() => setNearMyLevel(value => !value)}
+              disabled={!currentLevel}
+              className={`rounded-xl border px-4 py-2.5 text-sm font-black transition ${
+                nearMyLevel && currentLevel
+                  ? 'border-purple-400/60 bg-purple-600/40 text-white'
+                  : 'border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40'
               }`}
             >
-              <span className="text-xl">{b.emoji}</span>
-              <span className="text-xs font-bold leading-tight text-center">{b.label}</span>
-              <span className="text-[10px] opacity-60">{b.desc}</span>
+              Near my level {currentLevel ? `(Lv. ${Math.max(1, currentLevel - 10)}-${Math.min(100, currentLevel + 10)})` : ''}
             </button>
-          ))}
+
+            <p className="text-xs text-white/35">
+              Showing {filtered.length} of {players.length} players
+            </p>
+          </div>
         </div>
 
         {/* Empty bracket state */}
         {filtered.length === 0 && (
           <div className="text-center py-16 text-purple-300">
-            <div className="text-5xl mb-4">{activeBracket.emoji}</div>
+            <div className="text-5xl mb-4">{nearMyLevel ? '±10' : activeBracket.emoji}</div>
             <p className="font-bold text-white text-lg mb-1">
               {timePeriod === 'weekly' ? 'No weekly battles yet!' : 'No players here yet!'}
             </p>
             <p className="text-sm">
               {timePeriod === 'weekly' 
                 ? 'Play some battles this week to climb the weekly rankings!' 
-                : `Be the first ${activeBracket.label} on the board.`}
+                : normalizedSearch
+                ? `No players match "${searchTerm.trim()}".`
+                : `Be the first ${emptyFilterLabel} on the board.`}
             </p>
           </div>
         )}

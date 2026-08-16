@@ -5,6 +5,7 @@ import { generateQuestions } from '@/lib/game/questions'
 import { timeLimits } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
 import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
+import { recordServerEvent } from '@/lib/events/server'
 
 const MODES = ['realtime', 'turnbased'] as const
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
@@ -104,6 +105,7 @@ export async function POST(request: Request) {
     .insert({
       host_id:         user.id,
       guest_id:        botId,
+      bot_id:          botId,
       mode,
       difficulty,
       question_count:  10,
@@ -148,6 +150,23 @@ export async function POST(request: Request) {
     console.error('[bot] battle activation error:', updateError.message)
     return NextResponse.json({ error: 'Failed to activate bot battle' }, { status: 500 })
   }
+
+  await Promise.all([
+    recordServerEvent({
+      userId: user.id,
+      eventName: 'bot_fallback_started',
+      dedupKey: `battle:${battle.id}:bot-fallback`,
+      battleId: battle.id,
+      properties: { mode, difficulty, bot_difficulty: diff },
+    }),
+    recordServerEvent({
+      userId: user.id,
+      eventName: 'battle_started',
+      dedupKey: `battle:${battle.id}:started`,
+      battleId: battle.id,
+      properties: { mode, difficulty, question_count: 10, opponent_type: 'bot' },
+    }),
+  ])
 
   return NextResponse.json({ battle_id: battle.id, bot_username: BOT_META[diff].username })
 }

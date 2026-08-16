@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, use, useEffect, useRef, useState, useCallback } from 'react'
+import { Suspense, use, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Timer }        from '@/components/battle/Timer'
@@ -8,6 +8,7 @@ import { QuestionCard } from '@/components/battle/QuestionCard'
 import { PackOpener }   from '@/components/cards/PackOpener'
 import { GameNotice } from '@/components/battle/GameNotice'
 import Link from 'next/link'
+import { getPracticeProgress } from '@/lib/game/practice-progress'
 
 interface Question {
   id:            string
@@ -30,6 +31,9 @@ interface PackCard {
   description: string
   rarity:      'common' | 'uncommon' | 'rare' | 'legendary'
   image_url:   string
+  generation?: number | null
+  grade?:      number
+  is_duplicate?: boolean
 }
 
 interface Summary {
@@ -38,6 +42,19 @@ interface Summary {
   points:   number
   accuracy: number
   avgMs:    number
+}
+
+interface ServerPracticeSummary {
+  topic: string
+  difficulty: string
+  source: 'manual' | 'results' | 'profile'
+  baseline_attempts: number
+  baseline_correct: number
+  baseline_avg_ms: number | null
+  previous_best_accuracy: number | null
+  session_attempts: number
+  session_correct: number
+  session_avg_ms: number | null
 }
 
 const RESULT_DISPLAY_MS = 1200
@@ -52,6 +69,13 @@ async function readResponseJson(response: Response): Promise<Record<string, unkn
   return response.json().catch(() => ({}))
 }
 
+async function fetchBattleQuestions(battleId: string): Promise<Question[]> {
+  const response = await fetch(`/api/battles/${battleId}/questions`, { cache: 'no-store' })
+  if (!response.ok) return []
+  const data = await readResponseJson(response)
+  return Array.isArray(data.questions) ? data.questions as Question[] : []
+}
+
 export default function PracticeSessionPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <Suspense>
@@ -63,7 +87,7 @@ export default function PracticeSessionPage({ params }: { params: Promise<{ id: 
 function PracticeSessionContent({ params }: { params: Promise<{ id: string }> }) {
   const { id: battleId } = use(params)
   const router      = useRouter()
-  const supabase    = createClient()
+  const supabase    = useMemo(() => createClient(), [])
   const searchParams = useSearchParams()
   const answerMode  = (searchParams.get('mode') ?? 'typed') as 'typed' | 'multiple_choice'
   const POINTS_MULTIPLIER = answerMode === 'multiple_choice' ? 0.6 : 1.0
@@ -81,6 +105,7 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
   const [results,      setResults]      = useState<Result[]>([])
   const [finished,     setFinished]     = useState(false)
   const [summary,      setSummary]      = useState<Summary | null>(null)
+  const [serverSummary, setServerSummary] = useState<ServerPracticeSummary | null>(null)
   const [loading,      setLoading]      = useState(true)
   const [mcOptions,    setMcOptions]    = useState<number[]>([])
   const [mcSelected,   setMcSelected]   = useState<number | null>(null)
@@ -92,6 +117,9 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
   const [packError,     setPackError]     = useState<string | null>(null)
   const [showReview,    setShowReview]    = useState(false)
   const [sessionNotice, setSessionNotice] = useState<SessionNotice | null>(null)
+  const [isGuestUser,   setIsGuestUser]   = useState(false)
+  const [linkingSocial, setLinkingSocial] = useState(false)
+  const [socialLinkError, setSocialLinkError] = useState<string | null>(null)
   const timingsRef   = useRef<number[]>([])
   const answeredRef  = useRef(false)   // synchronous guard against timer/click race
 
@@ -113,44 +141,31 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUserId(user.id)
+      setIsGuestUser(Boolean(user.is_anonymous))
 
       const { data: b } = await supabase
         .from('battles').select('*').eq('id', battleId).single()
       if (!b) { router.push('/practice'); return }
       setBattle(b)
 
-      const { data: qs } = await supabase
-        .from('battle_questions_safe')
-        .select('*')
-        .eq('battle_id', battleId)
-        .order('sequence')
-      setQuestions((qs as Question[]) ?? [])
+      const qs = await fetchBattleQuestions(battleId)
+      if (qs.length === 0) {
+        setSessionNotice({
+          kind:    'error',
+          message: 'Practice questions could not be loaded. Please start a new session.',
+        })
+        router.push('/practice')
+        return
+      }
+
+      setQuestions(qs)
       setServerSentAt(new Date().toISOString())
       setLoading(false)
     }
     load()
   }, [battleId, router, supabase])
 
-  const finishSession = useCallback((allResults: Result[]) => {
-    fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
-      .then(async res => {
-        if (res.ok) {
-          setSessionNotice(null)
-          return
-        }
-
-        const data = await readResponseJson(res)
-        setSessionNotice({
-          kind:    res.status === 409 ? 'warning' : 'error',
-          message: String(data.error ?? 'Practice results could not be fully saved yet.'),
-        })
-      })
-      .catch(() => {
-        setSessionNotice({
-          kind:    'error',
-          message: 'Connection issue while saving your practice results.',
-        })
-      })
+  const finishSession = useCallback(async (allResults: Result[]) => {
     const correct  = allResults.filter(r => r.correct).length
     const total    = allResults.length
     const pts      = allResults.reduce((s, r) => s + r.points, 0)
@@ -158,31 +173,60 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
       ? Math.round(timingsRef.current.reduce((a, b) => a + b, 0) / timingsRef.current.length)
       : 0
 
-    setSummary({
+    let nextSummary: Summary = {
       total,
       correct,
       points:   pts,
       accuracy: Math.round((correct / total) * 100),
       avgMs,
-    })
-    setFinished(true)
+    }
 
-    // Fetch updated profile points after a short delay to let the finish API settle
-    setTimeout(async () => {
-      const sb = createClient()
-      const { data: { user } } = await sb.auth.getUser()
-      if (user) {
-        const { data: profile } = await sb
-          .from('profiles')
-          .select('total_points, points_balance')
-          .eq('id', user.id)
-          .single()
-        if (profile) {
-          setProfilePoints(profile.total_points)
-          setPackBalance(profile.points_balance)
+    try {
+      const response = await fetch(`/api/battles/${battleId}/finish`, { method: 'POST' })
+      const data = await readResponseJson(response)
+
+      if (!response.ok) {
+        setSessionNotice({
+          kind: response.status === 409 ? 'warning' : 'error',
+          message: String(data.error ?? 'Practice results could not be fully saved yet.'),
+        })
+      } else {
+        setSessionNotice(null)
+        const saved = data.practice_summary as ServerPracticeSummary | null
+        if (saved?.session_attempts) {
+          setServerSummary(saved)
+          nextSummary = {
+            total: saved.session_attempts,
+            correct: saved.session_correct,
+            points: pts,
+            accuracy: Math.round((saved.session_correct / saved.session_attempts) * 100),
+            avgMs: saved.session_avg_ms ?? 0,
+          }
         }
       }
-    }, 800)
+    } catch {
+      setSessionNotice({
+        kind: 'error',
+        message: 'Connection issue while saving your practice results.',
+      })
+    }
+
+    setSummary(nextSummary)
+    setFinished(true)
+
+    const sb = createClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (user) {
+      const { data: profile } = await sb
+        .from('profiles')
+        .select('total_points, points_balance')
+        .eq('id', user.id)
+        .single()
+      if (profile) {
+        setProfilePoints(profile.total_points)
+        setPackBalance(profile.points_balance)
+      }
+    }
   }, [battleId])
 
   const handleAnswer = useCallback(async (answer: number) => {
@@ -358,8 +402,43 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
     setOpening(false)
   }
 
+  async function linkGuestWithGoogle() {
+    setLinkingSocial(true)
+    setSocialLinkError(null)
+
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'google',
+      options:  {
+        redirectTo: `${window.location.origin}/auth/callback?next=/practice/${battleId}`,
+      },
+    })
+
+    if (error) {
+      setSocialLinkError(error.message)
+      setLinkingSocial(false)
+      return
+    }
+
+    if (data?.url) {
+      window.location.href = data.url
+      return
+    }
+
+    setSocialLinkError('Could not start Google sign-up. Please try again.')
+    setLinkingSocial(false)
+  }
+
   // ── SUMMARY SCREEN ──────────────────────────────
   if (finished && summary) {
+    const progress = serverSummary ? getPracticeProgress({
+      baselineAttempts: serverSummary.baseline_attempts,
+      baselineCorrect: serverSummary.baseline_correct,
+      baselineAvgMs: serverSummary.baseline_avg_ms,
+      sessionAttempts: serverSummary.session_attempts,
+      sessionCorrect: serverSummary.session_correct,
+      sessionAvgMs: serverSummary.session_avg_ms,
+      previousBestAccuracy: serverSummary.previous_best_accuracy,
+    }) : null
     const stars = summary.accuracy >= 90 ? 5 :
                   summary.accuracy >= 75 ? 4 :
                   summary.accuracy >= 60 ? 3 :
@@ -422,6 +501,48 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
               </div>
             ))}
           </div>
+
+          {progress && (
+            <div className="mb-4 border border-white/10 bg-white/[0.04] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase text-white/40">Focused progress</p>
+                  <h2 className="mt-1 text-xl font-black text-white">
+                    {progress.status === 'improved' ? 'You improved' :
+                     progress.status === 'stable' ? 'Holding steady' :
+                     progress.status === 'keep_practising' ? 'One more set will help' :
+                     'Baseline established'}
+                  </h2>
+                </div>
+                {progress.isPersonalBest && (
+                  <span className="bg-amber-300 px-2 py-1 text-xs font-black text-black">Personal best</span>
+                )}
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-px bg-white/10">
+                <div className="bg-[#11121a] p-3">
+                  <p className="text-xs text-white/40">Accuracy</p>
+                  <p className="mt-1 text-lg font-black text-white">
+                    {progress.accuracyBefore === null ? 'No baseline' : `${progress.accuracyBefore}%`}
+                    <span className="px-2 text-white/30">→</span>{progress.accuracyAfter}%
+                  </p>
+                </div>
+                <div className="bg-[#11121a] p-3">
+                  <p className="text-xs text-white/40">Average speed</p>
+                  <p className="mt-1 text-lg font-black text-white">
+                    {progress.speedBeforeMs === null ? 'No baseline' : `${(progress.speedBeforeMs / 1000).toFixed(1)}s`}
+                    <span className="px-2 text-white/30">→</span>
+                    {progress.speedAfterMs === null ? '-' : `${(progress.speedAfterMs / 1000).toFixed(1)}s`}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-white/45">
+                {progress.evidence === 'comparable'
+                  ? `Compared with your latest ${serverSummary?.baseline_attempts} unflagged answers in ${serverSummary?.topic.replaceAll('_', ' ')}.`
+                  : 'This is an early signal. Complete another set before treating the change as a reliable trend.'}
+              </p>
+            </div>
+          )}
 
           {/* Points earned + total balance */}
           <div className="bg-gradient-to-r from-violet-600/20 to-purple-600/10 border border-violet-500/30 rounded-2xl p-4 mb-4">
@@ -546,7 +667,9 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
 
           {/* Action buttons */}
           <div className="flex gap-3">
-            <Link href="/practice"
+            <Link href={serverSummary
+              ? `/practice?topic=${serverSummary.topic}&difficulty=${serverSummary.difficulty}&source=${serverSummary.source}`
+              : '/practice'}
               className="flex-1 bg-white/[0.06] hover:bg-white/[0.10] border border-white/10 text-white font-bold py-4 rounded-2xl transition text-center text-sm">
               🔄 Practice Again
             </Link>
@@ -555,6 +678,31 @@ function PracticeSessionContent({ params }: { params: Promise<{ id: string }> })
               ⚔️ Battle!
             </Link>
           </div>
+
+          {isGuestUser && (
+            <div className="mt-4 bg-white/[0.04] border border-white/10 rounded-2xl p-4">
+              <p className="text-white font-bold text-sm text-center">Save your points and XP</p>
+              <p className="text-white/45 text-xs text-center mt-1 mb-3">
+                Link Google to this guest profile so you keep today&apos;s progress.
+              </p>
+              <button
+                onClick={linkGuestWithGoogle}
+                disabled={linkingSocial}
+                className="w-full flex items-center justify-center gap-3 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed font-semibold py-3 rounded-xl text-sm transition shadow-sm"
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+                  <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+                  <path d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+                  <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                </svg>
+                {linkingSocial ? 'Opening Google...' : 'Save with Google'}
+              </button>
+              {socialLinkError && (
+                <p className="text-red-400 text-xs text-center mt-2">{socialLinkError}</p>
+              )}
+            </div>
+          )}
 
         </div>
 

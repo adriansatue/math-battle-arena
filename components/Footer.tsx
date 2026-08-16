@@ -9,6 +9,7 @@ export default function Footer() {
         </p>
         <nav className="flex flex-wrap items-center justify-center">
           <FooterLink href="/how-it-works">How It Works</FooterLink>
+          <FooterLink href="/levels-and-xp">Levels &amp; XP</FooterLink>
           <FooterLink href="/legal/cookies">Cookies Policy</FooterLink>
           <FooterLink href="/legal/terms">Terms &amp; Conditions</FooterLink>
           <FooterLink href="/legal/data-protection">Data Protection</FooterLink>
