@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { SwordLogo } from '@/components/SwordLogo'
 import { timeLimits } from '@/lib/game/questions'
 import { recordClientEvent } from '@/lib/events/client'
+import { DailyObjectivesPanel } from '@/components/lobby/DailyObjectivesPanel'
 
 type Mode = 'realtime' | 'turnbased'
 type Difficulty = 'easy' | 'medium' | 'hard'
@@ -317,6 +318,12 @@ export default function LobbyPage() {
             {error}
           </div>
         )}
+
+        <DailyObjectivesPanel
+          onBalanceChange={balance => setProfile(current => current
+            ? { ...current, points_balance: balance }
+            : current)}
+        />
 
         <section className="rounded-2xl border border-purple-300/25 bg-purple-500/15 p-4 shadow-xl shadow-purple-950/25 backdrop-blur-sm">
           <div className="flex items-start justify-between gap-4">

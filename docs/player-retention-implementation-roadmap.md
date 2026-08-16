@@ -1,6 +1,6 @@
 # Player Retention Implementation Roadmap
 
-Status: Phases 0-2 implemented; Phases 3-7 proposed  
+Status: Phases 0-2 and 4-6 implemented; Phases 3 and 7 proposed
 Created: 16 August 2026  
 Related: [Topic Unlocks and Gameplay Progression](./topic-unlocks-gameplay-proposal.md)
 
@@ -445,6 +445,8 @@ daily_objective_progress
 
 # Phase 5: Weekly Competition and Personal Summary
 
+Implementation status: Complete in code on 16 August 2026. Apply the weekly competition and event migrations before release.
+
 ## Goal
 
 Provide a medium-term reason to return that remains achievable for ordinary players.
@@ -494,6 +496,8 @@ Do not combine these into one opaque score.
 - Distribution of rewards across skill levels.
 
 # Phase 6: Collection With Purpose
+
+Implementation status: Complete in code on 16 August 2026. Apply the collection progression migration before release.
 
 ## Goal
 

@@ -8,6 +8,7 @@ import { logout, signInWithGoogle, changeUsername } from '@/lib/supabase/actions
 import { MAX_LEVEL, getLevelProgress } from '@/lib/game/progression'
 import { getTopicInsight } from '@/lib/game/performance'
 import { recordClientEvent } from '@/lib/events/client'
+import Image from 'next/image'
 
 interface Profile {
   id:                  string
@@ -32,6 +33,16 @@ interface Weakness {
   avg_speed_ms:  number
 }
 
+interface ShowcaseCard {
+  id: string
+  grade: number | null
+  reward_catalog: {
+    name: string
+    rarity: string
+    image_url: string
+  }
+}
+
 const categoryEmoji: Record<string, string> = {
   addition:        '➕',
   subtraction:     '➖',
@@ -53,6 +64,7 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
   const [isAnonymous,     setIsAnonymous]     = useState(false)
   const [email,           setEmail]           = useState<string | null>(null)
   const [loading,         setLoading]         = useState(true)
+  const [showcase,        setShowcase]        = useState<ShowcaseCard | null>(null)
 
   // Username change form state
   const [usernameInput,   setUsernameInput]   = useState('')
@@ -80,6 +92,12 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
 
       if (!prof) { router.push('/leaderboard'); return }
       setProfile(prof as Profile)
+
+      const showcaseResponse = await fetch(`/api/profile/${id}/showcase`, { cache: 'no-store' })
+      if (showcaseResponse.ok) {
+        const showcaseData = await showcaseResponse.json() as { showcase: ShowcaseCard | null }
+        setShowcase(showcaseData.showcase)
+      }
 
       if (user?.id === id) {
         const { data: w } = await supabase
@@ -177,6 +195,15 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
                 Joined {new Date(profile.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
               </p>
             </div>
+            {showcase && (
+              <div className="hidden w-20 shrink-0 text-center sm:block">
+                <div className="relative mx-auto h-16 w-16 overflow-hidden border border-cyan-300/30 bg-black/20">
+                  <Image src={showcase.reward_catalog.image_url} alt={showcase.reward_catalog.name} fill className="object-contain p-1" />
+                </div>
+                <p className="mt-1 truncate text-[10px] font-bold text-cyan-200">{showcase.reward_catalog.name}</p>
+                <p className="text-[9px] uppercase text-white/35">Showcase{showcase.grade ? ` · G${showcase.grade}` : ''}</p>
+              </div>
+            )}
           </div>
 
           <div className="mt-5 rounded-xl border border-white/10 bg-black/15 p-3.5">

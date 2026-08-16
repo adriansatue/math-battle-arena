@@ -37,8 +37,8 @@ describe('POST /api/battles/[id]/finish', () => {
         { data: activeBattle(), error: null },
         {
           data: [
-            { player_id: 'host-1', points_earned: 100, flagged: false },
-            { player_id: 'guest-1', points_earned: 50, flagged: false },
+            { player_id: 'host-1', points_earned: 100, is_correct: true, flagged: false },
+            { player_id: 'guest-1', points_earned: 50, is_correct: false, flagged: false },
           ],
           error: null,
         },
@@ -63,7 +63,7 @@ describe('POST /api/battles/[id]/finish', () => {
     const res = await POST(jsonRequest({}), { params: Promise.resolve({ id: 'battle-1' }) })
 
     expect(res.status).toBe(200)
-    expect(admin.rpc).toHaveBeenCalledTimes(2)
+    expect(admin.rpc).toHaveBeenCalledTimes(6)
     expect(admin.rpc).toHaveBeenCalledWith('settle_profile_battle_result', {
       p_battle_id:    'battle-1',
       p_profile_id:   'host-1',
@@ -83,6 +83,28 @@ describe('POST /api/battles/[id]/finish', () => {
       p_is_draw:      false,
       p_record_match: true,
       p_rating_delta: -16,
+    })
+    expect(admin.rpc).toHaveBeenCalledWith('record_daily_activity', {
+      p_user_id: 'host-1',
+      p_battle_id: 'battle-1',
+      p_correct_answers: 1,
+      p_is_competitive_battle: true,
+      p_is_focused_practice: false,
+    })
+    expect(admin.rpc).toHaveBeenCalledWith('record_weekly_competition_result', {
+      p_user_id: 'host-1',
+      p_battle_id: 'battle-1',
+    })
+    expect(admin.rpc).toHaveBeenCalledWith('record_weekly_competition_result', {
+      p_user_id: 'guest-1',
+      p_battle_id: 'battle-1',
+    })
+    expect(admin.rpc).toHaveBeenCalledWith('record_daily_activity', {
+      p_user_id: 'guest-1',
+      p_battle_id: 'battle-1',
+      p_correct_answers: 0,
+      p_is_competitive_battle: true,
+      p_is_focused_practice: false,
     })
     await expect(res.json()).resolves.toMatchObject({
       winner_id:   'host-1',
@@ -109,7 +131,7 @@ describe('POST /api/battles/[id]/finish', () => {
     const admin = createSupabaseMock({
       fromResults: [
         { data: { ...activeBattle(), guest_id: null }, error: null },
-        { data: [{ player_id: 'host-1', points_earned: 100, flagged: false }], error: null },
+        { data: [{ player_id: 'host-1', points_earned: 100, is_correct: true, flagged: false }], error: null },
         { data: { id: 'battle-1' }, error: null },
       ],
       rpcResults: [
@@ -127,6 +149,13 @@ describe('POST /api/battles/[id]/finish', () => {
     expect(admin.rpc).toHaveBeenCalledWith('complete_focused_practice', {
       p_battle_id: 'battle-1',
       p_user_id: 'host-1',
+    })
+    expect(admin.rpc).toHaveBeenCalledWith('record_daily_activity', {
+      p_user_id: 'host-1',
+      p_battle_id: 'battle-1',
+      p_correct_answers: 1,
+      p_is_competitive_battle: false,
+      p_is_focused_practice: true,
     })
     await expect(response.json()).resolves.toMatchObject({ practice_summary: practiceSummary })
   })

@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordServerEvent } from '@/lib/events/server'
+import { PACKS, type PackType } from '@/lib/game/collection'
 
-type PackType = 'basic' | 'rare' | 'legendary'
 type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary'
 
 type CatalogCard = {
@@ -64,13 +64,6 @@ const WEIGHTS: Record<PackType, Record<string, number>> = {
 }
 
 const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'legendary']
-const DUPLICATE_REFUND: Record<Rarity, number> = {
-  common:    25,
-  uncommon:  60,
-  rare:      150,
-  legendary: 400,
-}
-
 // TAG Grading Scale: 5 (Excellent) → 10 (Gem Mint)
 // https://taggrading.com/pages/scale
 const GRADE_WEIGHTS: [number, number][] = [
@@ -99,27 +92,14 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json().catch(() => ({})) as { pack_type?: PackType }
+  const body = await request.json().catch(() => ({})) as { pack_type?: PackType; request_id?: string }
   const pack_type: PackType = body.pack_type ?? 'basic'
   const config  = PACK_CONFIG[pack_type]
   const weights = WEIGHTS[pack_type]
 
   if (!config) return NextResponse.json({ error: 'Invalid pack type' }, { status: 400 })
-
-  // Check balance
-  const { data: profile } = await adminSupabase
-    .from('profiles')
-    .select('total_points, points_balance')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
-
-  const spendable = profile.points_balance ?? profile.total_points
-  if (spendable < config.cost) {
-    return NextResponse.json({
-      error: `Not enough coins. You need ${config.cost.toLocaleString()} coins to open this pack.`
-    }, { status: 400 })
+  if (!body.request_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)) {
+    return NextResponse.json({ error: 'Invalid request id' }, { status: 400 })
   }
 
   // Get eligible catalog cards
@@ -129,7 +109,9 @@ export async function POST(request: Request) {
     .eq('is_active', true)
     .in('rarity', config.allowedRarities)
 
-  const cards = (catalog ?? []) as CatalogCard[]
+  const cards = Array.from(new Map(
+    ((catalog ?? []) as CatalogCard[]).map(card => [card.name.trim().toLowerCase(), card])
+  ).values())
 
   if (cards.length === 0) {
     return NextResponse.json({ error: 'No rewards available' }, { status: 404 })
@@ -137,13 +119,13 @@ export async function POST(request: Request) {
 
   const { data: ownedInventory } = await adminSupabase
     .from('user_inventory')
-    .select('reward_id')
+    .select('reward_id, reward_catalog(name)')
     .eq('user_id', user.id)
 
-  const ownedRewardIds = new Set(
+  const ownedCardNames = new Set(
     (ownedInventory ?? [])
-      .map(item => (item as { reward_id?: string | null }).reward_id)
-      .filter((id): id is string => Boolean(id))
+      .map(item => (item as unknown as { reward_catalog?: { name?: string } | null }).reward_catalog?.name?.trim().toLowerCase())
+      .filter((name): name is string => Boolean(name))
   )
 
   function weightedPick(forceMinRarity?: Rarity, excludeIds = new Set<string>()): CatalogCard {
@@ -156,7 +138,7 @@ export async function POST(request: Request) {
       if (elevated.length > 0) pool = elevated
     }
 
-    const unownedPool = pool.filter(c => !ownedRewardIds.has(c.id) && !excludeIds.has(c.id))
+    const unownedPool = pool.filter(c => !ownedCardNames.has(c.name.trim().toLowerCase()) && !excludeIds.has(c.id))
     const freshPool = pool.filter(c => !excludeIds.has(c.id))
     if (unownedPool.length > 0) {
       pool = unownedPool
@@ -190,80 +172,60 @@ export async function POST(request: Request) {
 
   // Assign a TAG grade (5-10) to each card
   const grades = picks.map(() => rollGrade())
-  const duplicateRefund = picks.reduce(
-    (sum, card) => sum + (ownedRewardIds.has(card.id) ? DUPLICATE_REFUND[card.rarity] : 0),
-    0
-  )
-  const netCost = Math.max(0, config.cost - duplicateRefund)
-
-  const newBalance = spendable - netCost
-
-  // Deduct cost from spendable balance only (total_points stays as lifetime earned).
-  // The balance equality check prevents parallel pack-open requests from spending
-  // the same points twice.
-  const { data: chargedProfile, error: chargeError } = await adminSupabase
-    .from('profiles')
-    .update({ points_balance: newBalance })
-    .eq('id', user.id)
-    .eq('points_balance', spendable)
-    .select('points_balance')
-    .single()
-
-  if (chargeError || !chargedProfile) {
+  const { data: receiptData, error: settleError } = await adminSupabase.rpc('settle_pack_opening', {
+    p_request_id: body.request_id,
+    p_user_id: user.id,
+    p_pack_type: pack_type,
+    p_reward_ids: picks.map(card => card.id),
+    p_grades: grades,
+  })
+  if (settleError || !receiptData) {
+    const insufficient = settleError?.message.includes('insufficient coins')
     return NextResponse.json({
-      error: 'Your points balance changed. Please try opening the pack again.'
-    }, { status: 409 })
+      error: insufficient ? `Not enough coins. You need ${PACKS[pack_type].cost.toLocaleString()} coins to open this pack.` : 'Could not open this pack. Please try again.',
+    }, { status: insufficient ? 400 : 409 })
   }
-
-  // Add to inventory
-  const { error: insertError } = await adminSupabase
-    .from('user_inventory')
-    .insert(picks.map((card, i) => ({
-      user_id:      user.id,
-      reward_id:    card.id,
-      obtained_at:  new Date().toISOString(),
-      obtained_via: 'pack_reward',
-      grade:        grades[i],
-    })))
-
-  if (insertError) {
-    // Roll back the points deduction so the user isn't charged for a failed pack
-    await adminSupabase
-      .from('profiles')
-      .update({ points_balance: spendable })
-      .eq('id', user.id)
-      .eq('points_balance', newBalance)
-    console.error('[open-pack] insert error:', insertError)
-    return NextResponse.json({ error: 'Failed to save cards: ' + insertError.message }, { status: 500 })
+  const receipt = receiptData as {
+    reward_ids: string[]
+    grades: number[]
+    duplicate_count: number
+    duplicate_reward_ids?: string[]
+    duplicate_refund: number
+    net_cost: number
+    points_balance: number
   }
+  const returnedCards = receipt.reward_ids.map(rewardId => cards.find(card => card.id === rewardId)).filter((card): card is CatalogCard => Boolean(card))
+  if (returnedCards.length !== 3) return NextResponse.json({ error: 'Pack receipt is invalid' }, { status: 500 })
 
   await recordServerEvent({
     userId: user.id,
     eventName: 'pack_opened',
-    dedupKey: `pack:${crypto.randomUUID()}`,
+    dedupKey: `pack:${body.request_id}`,
     properties: {
       pack_type,
       cost: config.cost,
-      net_cost: netCost,
-      duplicate_count: picks.filter(card => ownedRewardIds.has(card.id)).length,
-      duplicate_refund: duplicateRefund,
-      legendary_count: picks.filter(card => card.rarity === 'legendary').length,
+      net_cost: receipt.net_cost,
+      duplicate_count: receipt.duplicate_count,
+      duplicate_refund: receipt.duplicate_refund,
+      legendary_count: returnedCards.filter(card => card.rarity === 'legendary').length,
     },
   })
 
   return NextResponse.json({
-    cards: picks.map((c, i) => ({
+    cards: returnedCards.map((c, i) => ({
       id:          c.id,
       name:        c.name,
       description: c.description,
       rarity:      c.rarity,
       image_url:   c.image_url,
       generation:  c.generation ?? null,
-      grade:       grades[i],
-      is_duplicate: ownedRewardIds.has(c.id),
+      grade:       receipt.grades[i],
+      is_duplicate: receipt.duplicate_reward_ids?.length
+        ? receipt.duplicate_reward_ids.includes(c.id)
+        : ownedCardNames.has(c.name.trim().toLowerCase()),
     })),
-    duplicate_refund: duplicateRefund,
-    net_cost:         netCost,
-    points_balance:   newBalance,
+    duplicate_refund: receipt.duplicate_refund,
+    net_cost:         receipt.net_cost,
+    points_balance:   receipt.points_balance,
   })
 }

@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { WIN_XP_BONUS, getLevelAndRank, getRewardMode } from '@/lib/game/scoring'
+import { getLevelAndRank } from '@/lib/game/scoring'
+import type { WeeklyCompetitionSummary } from '@/lib/game/weekly-competition'
+import { recordClientEvent } from '@/lib/events/client'
 
 interface Player {
   id:            string
@@ -52,9 +54,12 @@ export default function LeaderboardPage() {
   const [timePeriod,   setTimePeriod]   = useState<TimePeriod>('alltime')
   const [searchTerm,   setSearchTerm]   = useState('')
   const [nearMyLevel,  setNearMyLevel]  = useState(false)
+  const [weekly,       setWeekly]       = useState<WeeklyCompetitionSummary | null>(null)
+  const [claiming,     setClaiming]     = useState(false)
 
   useEffect(() => {
     async function load() {
+      setLoading(true)
       const supabase = createClient()
 
       const { data: { user } } = await supabase.auth.getUser()
@@ -72,6 +77,7 @@ export default function LeaderboardPage() {
       }
 
       if (timePeriod === 'alltime') {
+        setWeekly(null)
         // Fetch all-time leaderboard
         const { data } = await supabase
           .from('profiles')
@@ -83,6 +89,7 @@ export default function LeaderboardPage() {
 
         setPlayers(((data as Player[] | null) ?? []).map(withComputedProgress))
       } else if (timePeriod === 'rating') {
+        setWeekly(null)
         const { data } = await supabase
           .from('profiles')
           .select('id, username, total_points, rating, level, rank_title, wins, losses, best_streak')
@@ -93,86 +100,51 @@ export default function LeaderboardPage() {
 
         setPlayers(((data as Player[] | null) ?? []).map(withComputedProgress))
       } else {
-        // Fetch weekly leaderboard (last 7 days)
-        const sevenDaysAgo = new Date()
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-        const sevenDaysAgoISO = sevenDaysAgo.toISOString()
-
-        // Get all profiles first (including total_points for validation)
-        const { data: allProfiles } = await supabase
-          .from('profiles')
-          .select('id, username, level, rank_title, wins, losses, best_streak, total_points, rating')
-          .neq('rank_title', 'AI Challenger')
-          .not('username', 'ilike', '%MathBot%')
-
-        if (!allProfiles) {
+        const response = await fetch('/api/weekly-competition', { cache: 'no-store' })
+        if (!response.ok) {
+          setWeekly(null)
           setPlayers([])
-          setLoading(false)
-          return
-        }
-
-        // Calculate weekly points for each player
-        const { data: battles } = await supabase
-          .from('battles')
-          .select('id, finished_at, winner_id, guest_id, bot_id')
-          .eq('status', 'finished')
-          .gte('finished_at', sevenDaysAgoISO)
-
-        const battleIds = battles?.map(b => b.id) ?? []
-
-        if (battleIds.length === 0) {
-          // No battles in the last 7 days
-          setPlayers([])
-          setLoading(false)
-          return
-        }
-
-        const { data: answers } = await supabase
-          .from('battle_answers')
-          .select('player_id, points_earned')
-          .in('battle_id', battleIds)
-
-        // Calculate total points per player for the week
-        const weeklyPoints: Record<string, number> = {}
-        answers?.forEach(answer => {
-          weeklyPoints[answer.player_id] = (weeklyPoints[answer.player_id] ?? 0) + answer.points_earned
-        })
-
-        // Add the same mode-aware winner XP bonus used at battle finish.
-        battles?.forEach(battle => {
-          if (battle.winner_id) {
-            const mode = getRewardMode(battle)
-            weeklyPoints[battle.winner_id] = (weeklyPoints[battle.winner_id] ?? 0) + WIN_XP_BONUS[mode]
-          }
-        })
-
-        // Build weekly leaderboard
-        const weeklyPlayers = allProfiles
-          .filter(p => weeklyPoints[p.id] && weeklyPoints[p.id] > 0)
-          .map(p => {
-            const progress = getLevelAndRank(p.total_points ?? 0)
-            return {
-              id: p.id,
-              username: p.username,
-              total_points: weeklyPoints[p.id] ?? 0,
-              rating: p.rating ?? 1000,
-              level: progress.level,
-              rank_title: progress.rank_title,
-              wins: p.wins,
-              losses: p.losses,
-              best_streak: p.best_streak,
-            }
+        } else {
+          const summary = await response.json() as WeeklyCompetitionSummary
+          setWeekly(summary)
+          void recordClientEvent('weekly_summary_viewed', undefined, {
+            division: summary.division,
+            has_personal_summary: summary.personal !== null,
           })
-          .sort((a, b) => b.total_points - a.total_points)
-          .slice(0, 50)
-
-        setPlayers(weeklyPlayers as Player[])
+          setPlayers(summary.leaderboard.map(entry => ({
+            id: entry.user_id,
+            username: entry.username,
+            total_points: entry.xp_earned,
+            rating: entry.rating,
+            level: entry.level,
+            rank_title: `Division ${summary.division}`,
+            wins: entry.battles_won,
+            losses: Math.max(0, entry.battles_completed - entry.battles_won),
+            best_streak: 0,
+          })))
+        }
       }
 
       setLoading(false)
     }
     load()
   }, [timePeriod])
+
+  async function claimWeeklyReward() {
+    if (!weekly?.previous_reward || weekly.previous_reward.claimed) return
+    setClaiming(true)
+    const response = await fetch('/api/weekly-competition', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ week_start: weekly.previous_reward.week_start }),
+    })
+    if (response.ok) {
+      setWeekly(current => current?.previous_reward
+        ? { ...current, previous_reward: { ...current.previous_reward, claimed: true } }
+        : current)
+    }
+    setClaiming(false)
+  }
 
   const rankEmoji = (i: number) =>
     i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`
@@ -256,6 +228,52 @@ export default function LeaderboardPage() {
             PvP Rating
           </button>
         </div>
+
+        {timePeriod === 'weekly' && weekly && (
+          <section className="mb-6 border border-amber-300/25 bg-black/20 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase text-amber-300">{weekly.division_label} · Levels {(weekly.division - 1) * 10 + 1}-{weekly.division * 10}</p>
+                <p className="mt-1 text-sm text-white/55">UTC week: {weekly.week_start} to {weekly.week_end}</p>
+              </div>
+              {weekly.previous_reward && (
+                <button
+                  type="button"
+                  onClick={claimWeeklyReward}
+                  disabled={claiming || weekly.previous_reward.claimed}
+                  className="bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 disabled:bg-emerald-400/20 disabled:text-emerald-200"
+                >
+                  {weekly.previous_reward.claimed ? 'Weekly reward claimed' : claiming ? 'Claiming' : `Claim #${weekly.previous_reward.rank} · +${weekly.previous_reward.reward_coins} coins`}
+                </button>
+              )}
+            </div>
+            {weekly.personal ? (
+              <div className="mt-4 grid grid-cols-2 gap-px bg-white/10 sm:grid-cols-4">
+                {[
+                  ['Your rank', `#${weekly.personal.rank}`],
+                  ['Battles', weekly.personal.battles_completed],
+                  ['Accuracy', weekly.personal.accuracy === null ? '—' : `${weekly.personal.accuracy}%`],
+                  ['Rating move', `${weekly.personal.rating_change >= 0 ? '+' : ''}${weekly.personal.rating_change}`],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-indigo-950 px-3 py-3 text-center">
+                    <p className="text-lg font-black text-white">{value}</p>
+                    <p className="text-[10px] uppercase text-white/35">{label}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-white/50">Complete a PvP battle to enter your weekly division.</p>
+            )}
+            {weekly.personal && (
+              <p className="mt-3 text-xs text-white/45">
+                Best score {weekly.personal.best_score}
+                {weekly.personal.strongest_topic ? ` · Strongest: ${weekly.personal.strongest_topic.replaceAll('_', ' ')}` : ''}
+                {weekly.personal.weakest_topic ? ` · Focus next: ${weekly.personal.weakest_topic.replaceAll('_', ' ')}` : ''}
+                {weekly.personal.accuracy_change !== null ? ` · Accuracy ${weekly.personal.accuracy_change >= 0 ? '+' : ''}${weekly.personal.accuracy_change} points vs last week` : ''}
+              </p>
+            )}
+          </section>
+        )}
 
         {/* Filters */}
         <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.05] p-4">

@@ -36,16 +36,20 @@ export async function POST(
   // Tally scores from answers
   const { data: answers } = await adminSupabase
     .from('battle_answers')
-    .select('player_id, points_earned, flagged')
+    .select('player_id, points_earned, is_correct, flagged')
     .eq('battle_id', id)
 
   const totals: Record<string, number> = {}
   const flaggedTotals: Record<string, number> = {}
   const answerCounts: Record<string, number> = {}
+  const correctCounts: Record<string, number> = {}
   for (const a of (answers ?? [])) {
     totals[a.player_id] = (totals[a.player_id] ?? 0) + a.points_earned
     flaggedTotals[a.player_id] = (flaggedTotals[a.player_id] ?? 0) + (a.flagged ? a.points_earned : 0)
     answerCounts[a.player_id] = (answerCounts[a.player_id] ?? 0) + 1
+    if (a.is_correct && !a.flagged) {
+      correctCounts[a.player_id] = (correctCounts[a.player_id] ?? 0) + 1
+    }
   }
 
   const rewardMode = getRewardMode(battle)
@@ -245,6 +249,35 @@ export async function POST(
       practiceSummary = Array.isArray(data) ? data[0] ?? null : data
     }
   }
+
+  if (rewardMode === 'pvp') {
+    await Promise.all(playerIds.map(async playerId => {
+      const { error: weeklyError } = await adminSupabase.rpc('record_weekly_competition_result', {
+        p_user_id: playerId,
+        p_battle_id: id,
+      })
+      if (weeklyError) {
+        console.error(`[finish] weekly competition error for ${playerId}:`, weeklyError.message)
+      }
+    }))
+  }
+
+  await Promise.all(playerIds.map(async playerId => {
+    const isFocusedPractice = rewardMode === 'practice'
+      && practiceSummary !== null
+      && practiceSummary.source !== 'manual'
+    const { error: activityError } = await adminSupabase.rpc('record_daily_activity', {
+      p_user_id: playerId,
+      p_battle_id: id,
+      p_correct_answers: correctCounts[playerId] ?? 0,
+      p_is_competitive_battle: rewardMode !== 'practice',
+      p_is_focused_practice: isFocusedPractice,
+    })
+
+    if (activityError) {
+      console.error(`[finish] daily activity error for ${playerId}:`, activityError.message)
+    }
+  }))
 
   return NextResponse.json({
     winner_id:   winnerId,

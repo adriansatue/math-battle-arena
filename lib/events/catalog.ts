@@ -9,6 +9,7 @@ export const SERVER_EVENT_NAMES = [
   'practice_started',
   'practice_finished',
   'pack_opened',
+  'daily_objective_claimed',
 ] as const
 
 export const CLIENT_EVENT_NAMES = [
@@ -18,6 +19,8 @@ export const CLIENT_EVENT_NAMES = [
   'play_again_clicked',
   'recommended_practice_clicked',
   'profile_insight_viewed',
+  'daily_objectives_viewed',
+  'weekly_summary_viewed',
 ] as const
 
 export type ServerEventName = (typeof SERVER_EVENT_NAMES)[number]
@@ -32,6 +35,8 @@ const CLIENT_PROPERTY_KEYS: Record<ClientEventName, readonly string[]> = {
   play_again_clicked: ['mode', 'difficulty'],
   recommended_practice_clicked: ['topic', 'source'],
   profile_insight_viewed: ['primary_topic', 'insight_status', 'sample_label'],
+  daily_objectives_viewed: [],
+  weekly_summary_viewed: ['division', 'has_personal_summary'],
 }
 
 export function isClientEventName(value: unknown): value is ClientEventName {

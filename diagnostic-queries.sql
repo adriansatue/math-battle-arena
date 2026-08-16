@@ -536,3 +536,216 @@ SELECT
       > baseline_correct::numeric / baseline_attempts
   ) / NULLIF(COUNT(*) FILTER (WHERE later_attempts >= 3), 0), 1) AS later_improvement_percent
 FROM later_battle_answers;
+
+-- ============================================================================
+-- PHASE 4: DAILY OBJECTIVES AND ACTIVITY STREAKS
+-- Dates and week boundaries use UTC, matching the product reset contract.
+-- ============================================================================
+
+-- 20. OBJECTIVE VIEW, COMPLETION, AND CLAIM FUNNEL, LAST 14 UTC DAYS
+WITH objective_days AS (
+  SELECT
+    user_id,
+    objective_date,
+    BOOL_OR(completed_at IS NOT NULL) AS completed_any,
+    BOOL_OR(claimed_at IS NOT NULL) AS claimed_any
+  FROM daily_objective_progress
+  WHERE objective_date >= (NOW() AT TIME ZONE 'UTC')::date - 13
+  GROUP BY user_id, objective_date
+), viewed_days AS (
+  SELECT DISTINCT user_id, (occurred_at AT TIME ZONE 'UTC')::date AS objective_date
+  FROM product_events
+  WHERE event_name = 'daily_objectives_viewed'
+    AND occurred_at >= NOW() - INTERVAL '14 days'
+)
+SELECT
+  COUNT(*) AS generated_player_days,
+  COUNT(*) FILTER (WHERE viewed_days.user_id IS NOT NULL) AS viewed_player_days,
+  COUNT(*) FILTER (WHERE completed_any) AS completed_player_days,
+  COUNT(*) FILTER (WHERE claimed_any) AS claimed_player_days,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE completed_any) / NULLIF(COUNT(*), 0), 1) AS completion_rate_percent,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE claimed_any) / NULLIF(COUNT(*) FILTER (WHERE completed_any), 0), 1) AS claim_rate_percent
+FROM objective_days
+LEFT JOIN viewed_days USING (user_id, objective_date);
+
+-- 21. COMPLETION SPEED AND PARTIAL ABANDONMENT BY OBJECTIVE, LAST 14 UTC DAYS
+SELECT
+  objective_key,
+  COUNT(*) AS generated,
+  COUNT(*) FILTER (WHERE completed_at IS NOT NULL) AS completed,
+  ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - created_at)) / 60)
+    FILTER (WHERE completed_at IS NOT NULL), 1) AS avg_minutes_to_complete,
+  COUNT(*) FILTER (WHERE progress > 0 AND completed_at IS NULL) AS started_not_completed,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE progress > 0 AND completed_at IS NULL)
+    / NULLIF(COUNT(*) FILTER (WHERE progress > 0), 0), 1) AS partial_abandonment_percent
+FROM daily_objective_progress
+WHERE objective_date >= (NOW() AT TIME ZONE 'UTC')::date - 13
+GROUP BY objective_key
+ORDER BY objective_key;
+
+-- 22. NEXT-DAY RETURN AMONG PLAYERS WHO COMPLETED ANY OBJECTIVE
+WITH completion_days AS (
+  SELECT DISTINCT user_id, objective_date
+  FROM daily_objective_progress
+  WHERE completed_at IS NOT NULL
+    AND objective_date >= (NOW() AT TIME ZONE 'UTC')::date - 14
+    AND objective_date < (NOW() AT TIME ZONE 'UTC')::date
+)
+SELECT
+  COUNT(*) AS objective_completion_days,
+  COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM user_activity_days next_day
+    WHERE next_day.user_id = completion_days.user_id
+      AND next_day.activity_date = completion_days.objective_date + 1
+  )) AS returned_next_day,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM user_activity_days next_day
+    WHERE next_day.user_id = completion_days.user_id
+      AND next_day.activity_date = completion_days.objective_date + 1
+  )) / NULLIF(COUNT(*), 0), 1) AS next_day_return_percent
+FROM completion_days;
+
+-- 23. DAILY OBJECTIVE REWARD INFLATION, LAST 14 UTC DAYS
+SELECT
+  objective_date,
+  COUNT(*) FILTER (WHERE claimed_at IS NOT NULL) AS rewards_claimed,
+  COALESCE(SUM(reward_coins) FILTER (WHERE claimed_at IS NOT NULL), 0) AS coins_issued,
+  ROUND(COALESCE(SUM(reward_coins) FILTER (WHERE claimed_at IS NOT NULL), 0)::numeric
+    / NULLIF(COUNT(DISTINCT user_id) FILTER (WHERE claimed_at IS NOT NULL), 0), 1) AS coins_per_claiming_player
+FROM daily_objective_progress
+WHERE objective_date >= (NOW() AT TIME ZONE 'UTC')::date - 13
+GROUP BY objective_date
+ORDER BY objective_date DESC;
+
+-- 24. DISTRIBUTION OF COMPLETED CONSECUTIVE DAY AND WEEK RUNS
+WITH day_groups AS (
+  SELECT
+    user_id,
+    activity_date,
+    activity_date - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY activity_date)::integer AS run_group
+  FROM user_activity_days
+), day_runs AS (
+  SELECT user_id, COUNT(*)::integer AS run_length
+  FROM day_groups
+  GROUP BY user_id, run_group
+), weeks AS (
+  SELECT DISTINCT
+    user_id,
+    activity_date - (EXTRACT(ISODOW FROM activity_date)::integer - 1) AS week_start
+  FROM user_activity_days
+), week_groups AS (
+  SELECT
+    user_id,
+    week_start,
+    week_start - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY week_start)::integer * 7 AS run_group
+  FROM weeks
+), week_runs AS (
+  SELECT user_id, COUNT(*)::integer AS run_length
+  FROM week_groups
+  GROUP BY user_id, run_group
+), combined AS (
+  SELECT 'day' AS period, run_length FROM day_runs
+  UNION ALL
+  SELECT 'week' AS period, run_length FROM week_runs
+)
+SELECT period, run_length, COUNT(*) AS player_runs
+FROM combined
+GROUP BY period, run_length
+ORDER BY period, run_length;
+
+-- ============================================================================
+-- PHASE 5: WEEKLY COMPETITION
+-- ============================================================================
+
+-- 25. WEEKLY PARTICIPATION AND SUMMARY VIEW RATE BY UTC WEEK
+SELECT
+  entries.week_start,
+  COUNT(DISTINCT entries.user_id) AS participants,
+  COUNT(DISTINCT views.user_id) AS summary_viewers,
+  ROUND(100.0 * COUNT(DISTINCT views.user_id) / NULLIF(COUNT(DISTINCT entries.user_id), 0), 1) AS summary_view_rate_percent,
+  ROUND(AVG(entries.battles_completed), 1) AS avg_pvp_battles,
+  ROUND(AVG(entries.xp_earned), 1) AS avg_weekly_xp
+FROM weekly_competition_entries entries
+LEFT JOIN product_events views
+  ON views.user_id = entries.user_id
+ AND views.event_name = 'weekly_summary_viewed'
+ AND (views.occurred_at AT TIME ZONE 'UTC')::date BETWEEN entries.week_start AND entries.week_start + 6
+GROUP BY entries.week_start
+ORDER BY entries.week_start DESC;
+
+-- 26. SEVEN-DAY RETURN AFTER WEEKLY PARTICIPATION
+SELECT
+  COUNT(*) AS participants,
+  COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM user_activity_days activity
+    WHERE activity.user_id = entries.user_id
+      AND activity.activity_date BETWEEN entries.week_start + 7 AND entries.week_start + 13
+  )) AS returned_next_week,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM user_activity_days activity
+    WHERE activity.user_id = entries.user_id
+      AND activity.activity_date BETWEEN entries.week_start + 7 AND entries.week_start + 13
+  )) / NULLIF(COUNT(*), 0), 1) AS next_week_return_percent
+FROM weekly_competition_entries entries
+WHERE entries.week_start < (NOW() AT TIME ZONE 'UTC')::date - 13;
+
+-- 27. WEEKLY REWARD DISTRIBUTION BY DIVISION
+SELECT
+  week_start,
+  division,
+  COUNT(*) AS claims,
+  SUM(reward_coins) AS coins_issued,
+  ROUND(AVG(reward_coins), 1) AS avg_reward,
+  MIN(final_rank) AS best_claimed_rank,
+  MAX(final_rank) AS lowest_claimed_rank
+FROM weekly_reward_claims
+GROUP BY week_start, division
+ORDER BY week_start DESC, division;
+
+-- ============================================================================
+-- PHASE 6: COLLECTION WITH PURPOSE
+-- ============================================================================
+
+-- 28. COLLECTION COMPLETION AND DUPLICATE DISTRIBUTION
+WITH inventory AS (
+  SELECT inventory.user_id, COUNT(*) AS cards, COUNT(DISTINCT LOWER(TRIM(catalog.name))) AS unique_cards
+  FROM user_inventory inventory
+  JOIN reward_catalog catalog ON catalog.id = inventory.reward_id
+  GROUP BY inventory.user_id
+), catalog AS (
+  SELECT COUNT(DISTINCT LOWER(TRIM(name))) AS total_cards FROM reward_catalog WHERE is_active
+)
+SELECT
+  COUNT(*) AS collectors,
+  ROUND(AVG(unique_cards), 1) AS avg_unique_cards,
+  ROUND(AVG(cards - unique_cards), 1) AS avg_duplicates,
+  COUNT(*) FILTER (WHERE unique_cards = catalog.total_cards) AS completed_catalogs,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE unique_cards = catalog.total_cards) / NULLIF(COUNT(*), 0), 1) AS completion_rate_percent
+FROM inventory CROSS JOIN catalog;
+
+-- 29. PACK AFFORDABILITY AND ACTIVE GOAL DISTRIBUTION
+SELECT
+  preferences.selected_pack_type,
+  COUNT(*) AS players,
+  ROUND(AVG(GREATEST(0, CASE preferences.selected_pack_type
+    WHEN 'basic' THEN 300 WHEN 'rare' THEN 900 ELSE 1800 END
+    - COALESCE(profiles.points_balance, profiles.total_points, 0))), 1) AS avg_coins_remaining,
+  COUNT(*) FILTER (WHERE COALESCE(profiles.points_balance, profiles.total_points, 0) >= CASE preferences.selected_pack_type
+    WHEN 'basic' THEN 300 WHEN 'rare' THEN 900 ELSE 1800 END) AS can_afford_goal
+FROM collection_preferences preferences
+JOIN profiles ON profiles.id = preferences.user_id
+GROUP BY preferences.selected_pack_type;
+
+-- 30. PACK DUPLICATE REFUNDS AND NET COIN SINK, LAST 30 DAYS
+SELECT
+  pack_type,
+  COUNT(*) AS packs_opened,
+  SUM(duplicate_count) AS duplicates,
+  ROUND(100.0 * SUM(duplicate_count) / NULLIF(COUNT(*) * 3, 0), 1) AS duplicate_rate_percent,
+  SUM(gross_cost) AS gross_cost,
+  SUM(duplicate_refund) AS refunded,
+  SUM(net_cost) AS net_coin_sink
+FROM pack_opening_receipts
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY pack_type
+ORDER BY pack_type;
