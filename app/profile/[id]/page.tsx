@@ -9,6 +9,7 @@ import { MAX_LEVEL, getLevelProgress } from '@/lib/game/progression'
 import { getTopicInsight } from '@/lib/game/performance'
 import { recordClientEvent } from '@/lib/events/client'
 import Image from 'next/image'
+import { EmailReminderPreference } from '@/components/profile/EmailReminderPreference'
 
 interface Profile {
   id:                  string
@@ -399,6 +400,12 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
                 <dd className="font-semibold text-white/70">{profile.username_customized ? 'Used' : 'Available'}</dd>
               </div>
             </dl>
+
+            {!isAnonymous && email && (
+              <div className="border-b border-white/10">
+                <EmailReminderPreference />
+              </div>
+            )}
 
             {!profile.username_customized && (
               <div className="mt-5">

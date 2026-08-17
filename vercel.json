@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/battles/cleanup",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/re-engagement",
+      "schedule": "0 9 * * *"
     }
   ]
 }

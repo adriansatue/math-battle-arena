@@ -8,6 +8,7 @@ import { SwordLogo } from '@/components/SwordLogo'
 import { timeLimits } from '@/lib/game/questions'
 import { recordClientEvent } from '@/lib/events/client'
 import { DailyObjectivesPanel } from '@/components/lobby/DailyObjectivesPanel'
+import { NewsletterConsentPrompt } from '@/components/lobby/NewsletterConsentPrompt'
 
 type Mode = 'realtime' | 'turnbased'
 type Difficulty = 'easy' | 'medium' | 'hard'
@@ -312,6 +313,8 @@ export default function LobbyPage() {
             </div>
           </div>
         </header>
+
+        <NewsletterConsentPrompt />
 
         {error && (
           <div className="rounded-2xl border border-red-300/30 bg-red-500/15 px-4 py-3 text-sm text-red-100 shadow-lg shadow-red-950/20">

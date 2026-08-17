@@ -43,7 +43,7 @@ export function jsonRequest(body: unknown): Request {
 }
 
 export function createSupabaseMock(options: {
-  user?: { id: string } | null
+  user?: { id: string; email?: string; is_anonymous?: boolean } | null
   authError?: unknown
   fromResults?: QueryResult[]
   rpcResults?: QueryResult[]

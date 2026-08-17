@@ -749,3 +749,80 @@ FROM pack_opening_receipts
 WHERE created_at >= NOW() - INTERVAL '30 days'
 GROUP BY pack_type
 ORDER BY pack_type;
+
+-- ============================================================================
+-- OPTIONAL RE-ENGAGEMENT EMAIL
+-- Existing accounts are opted out unless they explicitly enable reminders.
+-- ============================================================================
+
+-- 31. CONSENT AND DELIVERY HEALTH
+SELECT
+  COUNT(*) AS preference_records,
+  COUNT(*) FILTER (WHERE reengagement_opt_in AND unsubscribed_at IS NULL) AS currently_opted_in,
+  COUNT(*) FILTER (WHERE unsubscribed_at IS NOT NULL) AS opted_out_or_suppressed,
+  (SELECT COUNT(*) FROM email_delivery_log WHERE sent_at IS NOT NULL) AS sends_attempted,
+  (SELECT COUNT(*) FROM email_delivery_log WHERE clicked_at IS NOT NULL) AS attributed_clicks,
+  ROUND(100.0 * (SELECT COUNT(*) FROM email_delivery_log WHERE clicked_at IS NOT NULL)
+    / NULLIF((SELECT COUNT(*) FROM email_delivery_log WHERE sent_at IS NOT NULL), 0), 1) AS click_rate_percent
+FROM user_email_preferences;
+
+-- 35. NEWSLETTER LOBBY PROMPT FUNNEL
+SELECT
+  COUNT(*) FILTER (WHERE newsletter_prompted_at IS NOT NULL) AS prompt_shown,
+  COUNT(*) FILTER (WHERE newsletter_decided_at IS NOT NULL) AS decided,
+  COUNT(*) FILTER (
+    WHERE newsletter_decided_at IS NOT NULL AND newsletter_opt_in
+  ) AS accepted,
+  COUNT(*) FILTER (
+    WHERE newsletter_decided_at IS NOT NULL AND NOT newsletter_opt_in
+  ) AS declined,
+  ROUND(100.0 * COUNT(*) FILTER (
+    WHERE newsletter_decided_at IS NOT NULL AND newsletter_opt_in
+  ) / NULLIF(COUNT(*) FILTER (WHERE newsletter_prompted_at IS NOT NULL), 0), 1) AS acceptance_percent
+FROM user_email_preferences;
+
+-- 32. SEVEN-DAY RETURN AFTER A SUCCESSFUL REMINDER
+WITH sent AS (
+  SELECT user_id, campaign_key, sent_at
+  FROM email_delivery_log
+  WHERE sent_at IS NOT NULL
+)
+SELECT
+  COUNT(*) AS emails_sent,
+  COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM user_activity_days activity
+    WHERE activity.user_id = sent.user_id
+      AND activity.first_activity_at > sent.sent_at
+      AND activity.first_activity_at <= sent.sent_at + INTERVAL '7 days'
+  )) AS returned_within_7_days,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE EXISTS (
+    SELECT 1 FROM user_activity_days activity
+    WHERE activity.user_id = sent.user_id
+      AND activity.first_activity_at > sent.sent_at
+      AND activity.first_activity_at <= sent.sent_at + INTERVAL '7 days'
+  )) / NULLIF(COUNT(*), 0), 1) AS seven_day_return_percent
+FROM sent;
+
+-- 33. CAMPAIGN DELIVERY, CLICK, AND FAILURE BREAKDOWN
+SELECT
+  campaign_key,
+  COUNT(*) AS reserved,
+  COUNT(*) FILTER (WHERE sent_at IS NOT NULL) AS sent,
+  COUNT(*) FILTER (WHERE clicked_at IS NOT NULL) AS clicked,
+  COUNT(*) FILTER (WHERE status = 'failed') AS failed_or_suppressed,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE clicked_at IS NOT NULL)
+    / NULLIF(COUNT(*) FILTER (WHERE sent_at IS NOT NULL), 0), 1) AS click_rate_percent
+FROM email_delivery_log
+GROUP BY campaign_key
+ORDER BY campaign_key DESC;
+
+-- 34. NEWSLETTER CONSENT
+SELECT
+  COUNT(*) AS preference_records,
+  COUNT(*) FILTER (
+    WHERE newsletter_opt_in AND newsletter_unsubscribed_at IS NULL
+  ) AS newsletter_subscribers,
+  COUNT(*) FILTER (
+    WHERE newsletter_unsubscribed_at IS NOT NULL
+  ) AS newsletter_opt_outs
+FROM user_email_preferences;

@@ -46,7 +46,7 @@ export default function DataProtectionPage() {
             <li><strong className="text-white/90">Operate social features</strong> — show usernames, levels, ratings, and results on profiles and leaderboards.</li>
             <li><strong className="text-white/90">Protect the Service</strong> — authenticate users and detect cheating, abuse, fraud, and technical failures.</li>
             <li><strong className="text-white/90">Improve the Service</strong> — understand performance and improve game balance and reliability.</li>
-            <li><strong className="text-white/90">Communicate with you</strong> — answer support enquiries and data protection requests.</li>
+            <li><strong className="text-white/90">Communicate with you</strong> — answer support enquiries and data protection requests, send optional game reminders, and share an optional newsletter about major game updates where you have enabled each type of email. You can manage both choices independently in your profile or unsubscribe from an email.</li>
           </ul>
         </Section>
 
@@ -54,6 +54,7 @@ export default function DataProtectionPage() {
           Depending on the activity, we rely on:
           <ul className="list-disc list-inside mt-2 space-y-2 text-white/70">
             <li><strong className="text-white/90">Contract</strong> — where information is needed to provide the account and game features you request.</li>
+            <li><strong className="text-white/90">Consent</strong> — for optional game reminders and newsletters. You can withdraw either choice independently at any time.</li>
             <li><strong className="text-white/90">Legitimate interests</strong> — to secure, maintain, understand, and improve the Service, provided those interests do not override your rights.</li>
             <li><strong className="text-white/90">Legal obligation</strong> — where we must keep, use, or disclose information to comply with the law.</li>
           </ul>
@@ -74,6 +75,7 @@ export default function DataProtectionPage() {
           with a reorganisation or transfer of the Service.
           <ul className="list-disc list-inside mt-2 space-y-2 text-white/70">
             <li><strong className="text-white/90">Supabase</strong> provides database and authentication infrastructure.</li>
+            <li><strong className="text-white/90">Resend</strong> delivers optional game reminders and newsletters to players who enable them.</li>
             <li><strong className="text-white/90">Hosting and infrastructure providers</strong> deliver and protect the application.</li>
           </ul>
         </Section>
