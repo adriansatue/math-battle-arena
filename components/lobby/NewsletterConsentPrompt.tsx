@@ -49,8 +49,14 @@ export function NewsletterConsentPrompt() {
         newsletter_source: 'lobby_prompt',
       }),
     })
-    if (response.ok) setVisible(false)
-    else setError('We could not save your choice. Please try again.')
+    if (response.ok) {
+      setVisible(false)
+    } else {
+      const result = await response.json().catch(() => ({})) as { code?: string }
+      setError(result.code === 'NEWSLETTER_NOT_CONFIGURED'
+        ? 'Email updates are not available yet. Please try again later.'
+        : 'We could not save your choice. Please try again.')
+    }
     setSaving(false)
   }
 

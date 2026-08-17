@@ -83,6 +83,24 @@ describe('/api/email/preferences', () => {
     expect(admin.from).not.toHaveBeenCalled()
   })
 
+  it('identifies missing newsletter configuration without exposing provider details', async () => {
+    vi.mocked(createClient).mockResolvedValue(createSupabaseMock({
+      user: { id: 'user-1', email: 'player@example.com', is_anonymous: false },
+    }) as never)
+    vi.mocked(createAdminClient).mockReturnValue(createSupabaseMock() as never)
+    vi.mocked(syncNewsletterSubscription).mockResolvedValue({
+      ok: false, error: 'Newsletter provider is not configured',
+    })
+
+    const response = await PATCH(jsonRequest({ newsletter_opt_in: true }))
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Newsletter is not configured',
+      code: 'NEWSLETTER_NOT_CONFIGURED',
+    })
+  })
+
   it('records that the Lobby prompt was shown', async () => {
     const admin = createSupabaseMock({ fromResults: [{ data: null, error: null }] })
     vi.mocked(createClient).mockResolvedValue(createSupabaseMock({

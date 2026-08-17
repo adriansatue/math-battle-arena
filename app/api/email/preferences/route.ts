@@ -94,7 +94,13 @@ export async function PATCH(request: Request) {
     }
     if (shouldSync) {
       const synced = await syncNewsletterSubscription(user.email, body.newsletter_opt_in as boolean)
-      if (!synced.ok) return NextResponse.json({ error: synced.error }, { status: 502 })
+      if (!synced.ok) {
+        const configurationError = synced.error === 'Newsletter provider is not configured'
+        return NextResponse.json({
+          error: configurationError ? 'Newsletter is not configured' : 'Could not update newsletter subscription',
+          code: configurationError ? 'NEWSLETTER_NOT_CONFIGURED' : 'NEWSLETTER_PROVIDER_ERROR',
+        }, { status: 502 })
+      }
     }
   }
 
