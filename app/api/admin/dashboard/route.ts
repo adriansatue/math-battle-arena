@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/admin-guard'
-import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
 
 type ProfileRow = {
   id: string
@@ -84,6 +83,15 @@ type PlayerStats = {
 const DATA_LIMIT = 10000
 const STALE_ACTIVE_MS = 30 * 60 * 1000
 const STALE_WAITING_MS = 15 * 60 * 1000
+const PLAYER_PAGE_SIZE = 20
+
+const PLAYER_SORTS = {
+  lastPlayedAt: (a: PlayerStats, b: PlayerStats) => timestamp(b.lastPlayedAt) - timestamp(a.lastPlayedAt),
+  flaggedAnswers: (a: PlayerStats, b: PlayerStats) => b.flaggedAnswers - a.flaggedAnswers,
+  battlesPlayed: (a: PlayerStats, b: PlayerStats) => b.battlesPlayed - a.battlesPlayed,
+  rating: (a: PlayerStats, b: PlayerStats) => b.rating - a.rating,
+  accuracy: (a: PlayerStats, b: PlayerStats) => b.accuracy - a.accuracy,
+} satisfies Record<string, (a: PlayerStats, b: PlayerStats) => number>
 
 function numberValue(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
@@ -109,14 +117,112 @@ function battleKind(battle: BattleRow) {
   return 'pvp'
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await requireAdmin()
   if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+  const url = new URL(request.url)
+  const search = (url.searchParams.get('search') ?? '').trim().slice(0, 40)
+  const attentionOnly = url.searchParams.get('attention') === 'true'
+  const requestedSort = url.searchParams.get('sort') ?? 'lastPlayedAt'
+  const sort = requestedSort in PLAYER_SORTS ? requestedSort as keyof typeof PLAYER_SORTS : 'lastPlayedAt'
+  const direction = url.searchParams.get('direction') === 'asc' ? 'asc' : 'desc'
+  const requestedPage = Number.parseInt(url.searchParams.get('page') ?? '1', 10)
+  const page = Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1
+
   const admin = createAdminClient()
-  await cleanupInactiveBattles(admin)
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
   const now = Date.now()
+  const [metricsRes, playerPageRes] = await Promise.all([
+    admin.rpc('get_admin_dashboard_metrics', { p_now: new Date(now).toISOString() }),
+    admin.rpc('get_admin_dashboard_players', {
+      p_search: search,
+      p_attention_only: attentionOnly,
+      p_sort: sort,
+      p_direction: direction,
+      p_page: page,
+      p_page_size: PLAYER_PAGE_SIZE,
+    }),
+  ])
+
+  if (!metricsRes.error && !playerPageRes.error && metricsRes.data && playerPageRes.data) {
+    const metrics = metricsRes.data as {
+      summary?: Record<string, unknown>
+      trends?: unknown
+      funnel?: unknown[]
+      alerts?: {
+        staleActiveBattles?: number
+        staleWaitingBattles?: number
+        flaggedPlayers?: { id: string; username: string; flaggedAnswers: number }[]
+      }
+    }
+    const playerPage = playerPageRes.data as { total?: number; players?: PlayerStats[] }
+    const recentBattlesRes = await admin
+      .from('battles')
+      .select('id, host_id, guest_id, status, mode, difficulty, question_count, winner_id, host_score, guest_score, bot_id, bet_status, created_at, started_at, finished_at')
+      .order('created_at', { ascending: false })
+      .limit(12)
+
+    if (recentBattlesRes.error) {
+      return NextResponse.json({ error: recentBattlesRes.error.message }, { status: 500 })
+    }
+
+    const recentBattleRows = (recentBattlesRes.data ?? []) as BattleRow[]
+    const profileIds = [...new Set(recentBattleRows.flatMap(battle => [battle.host_id, battle.guest_id, battle.winner_id]).filter((id): id is string => Boolean(id)))]
+    const recentProfilesRes = profileIds.length > 0
+      ? await admin.from('profiles').select('id, username').in('id', profileIds)
+      : { data: [], error: null }
+    if (recentProfilesRes.error) {
+      return NextResponse.json({ error: recentProfilesRes.error.message }, { status: 500 })
+    }
+    const recentProfileMap = new Map(((recentProfilesRes.data ?? []) as Pick<ProfileRow, 'id' | 'username'>[]).map(profile => [profile.id, profile]))
+    const recentBattles = recentBattleRows.map(battle => {
+      const kind = battleKind(battle)
+      return {
+        id: battle.id,
+        status: battle.status ?? 'unknown',
+        kind,
+        mode: battle.mode ?? 'unknown',
+        difficulty: battle.difficulty ?? 'unknown',
+        questionCount: numberValue(battle.question_count),
+        hostName: battle.host_id ? recentProfileMap.get(battle.host_id)?.username ?? 'Unknown host' : 'Unknown host',
+        guestName: battle.guest_id ? recentProfileMap.get(battle.guest_id)?.username ?? 'Waiting' : kind === 'practice' ? 'Practice' : 'Waiting',
+        winnerName: battle.winner_id ? recentProfileMap.get(battle.winner_id)?.username ?? null : null,
+        hostScore: numberValue(battle.host_score),
+        guestScore: numberValue(battle.guest_score),
+        betStatus: battle.bet_status ?? null,
+        createdAt: battle.created_at,
+        startedAt: battle.started_at,
+        finishedAt: battle.finished_at,
+      }
+    })
+    const totalPlayers = typeof playerPage.total === 'number' ? playerPage.total : 0
+    const totalPages = Math.max(1, Math.ceil(totalPlayers / PLAYER_PAGE_SIZE))
+
+    return NextResponse.json({
+      refreshedAt: new Date().toISOString(),
+      summary: { ...(metrics.summary ?? {}), dataLimit: null },
+      trends: metrics.trends ?? null,
+      funnel: metrics.funnel ?? [],
+      alerts: {
+        staleActiveBattles: metrics.alerts?.staleActiveBattles ?? 0,
+        staleWaitingBattles: metrics.alerts?.staleWaitingBattles ?? 0,
+        flaggedPlayers: metrics.alerts?.flaggedPlayers ?? [],
+      },
+      playerPagination: {
+        page: Math.min(page, totalPages),
+        pageSize: PLAYER_PAGE_SIZE,
+        total: totalPlayers,
+        totalPages,
+        search,
+        attentionOnly,
+        sort,
+        direction,
+      },
+      players: playerPage.players ?? [],
+      recentBattles,
+    })
+  }
 
   const [
     profilesRes,
@@ -296,13 +402,23 @@ export async function GET() {
       ...stats,
       accuracy: stats.answers > 0 ? Math.round((stats.correctAnswers / stats.answers) * 100) : 0,
     }))
-    .sort((a, b) => {
-      const recentDiff = timestamp(b.lastPlayedAt) - timestamp(a.lastPlayedAt)
-      return recentDiff !== 0 ? recentDiff : b.totalPoints - a.totalPoints
-    })
 
   const activePlayers = players.filter(player => player.battlesPlayed > 0 || player.answers > 0)
   const recentPlayers = activePlayers.filter(player => timestamp(player.lastPlayedAt) >= weekAgo)
+  const filteredPlayers = players.filter(player => {
+    const matchesSearch = search.length === 0 || player.username.toLowerCase().includes(search.toLowerCase())
+    const matchesAttention = !attentionOnly || player.flaggedAnswers > 0
+    return matchesSearch && matchesAttention
+  })
+  const sortPlayer = PLAYER_SORTS[sort]
+  filteredPlayers.sort((a, b) => {
+    const result = sortPlayer(a, b)
+    const directed = direction === 'asc' ? -result : result
+    return directed !== 0 ? directed : a.username.localeCompare(b.username)
+  })
+  const totalPlayerPages = Math.max(1, Math.ceil(filteredPlayers.length / PLAYER_PAGE_SIZE))
+  const currentPage = Math.min(page, totalPlayerPages)
+  const playerOffset = (currentPage - 1) * PLAYER_PAGE_SIZE
   const battlesLast7Days = battles.filter(battle => timestamp(battle.created_at) >= weekAgo).length
   const answersLast7Days = answers.filter(answer => timestamp(answer.answered_at) >= weekAgo).length
   const correctAnswers = answers.filter(answer => answer.is_correct).length
@@ -349,6 +465,7 @@ export async function GET() {
   })
 
   return NextResponse.json({
+    refreshedAt: new Date().toISOString(),
     summary: {
       totalUsers: usersCount.count ?? 0,
       realPlayers: players.length,
@@ -373,6 +490,8 @@ export async function GET() {
       queueSize: queueCount.count ?? 0,
       dataLimit: DATA_LIMIT,
     },
+    trends: null,
+    funnel: [],
     alerts: {
       staleActiveBattles: staleActiveBattles.length,
       staleWaitingBattles: staleWaitingBattles.length,
@@ -386,7 +505,17 @@ export async function GET() {
           flaggedAnswers: player.flaggedAnswers,
         })),
     },
-    players: players.slice(0, 30),
+    playerPagination: {
+      page: currentPage,
+      pageSize: PLAYER_PAGE_SIZE,
+      total: filteredPlayers.length,
+      totalPages: totalPlayerPages,
+      search,
+      attentionOnly,
+      sort,
+      direction,
+    },
+    players: filteredPlayers.slice(playerOffset, playerOffset + PLAYER_PAGE_SIZE),
     recentBattles,
   })
 }

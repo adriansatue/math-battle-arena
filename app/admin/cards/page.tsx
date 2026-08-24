@@ -101,6 +101,7 @@ export default function AdminCardsPage() {
   }
 
   async function toggleActive(card: Card) {
+    if (card.is_active && !window.confirm(`La carta "${card.name}" dejará de estar disponible en nuevos sobres. ¿Continuar?`)) return
     const res = await fetch(`/api/admin/cards/${card.id}`, {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -111,7 +112,7 @@ export default function AdminCardsPage() {
     if (res.ok && data.card) {
       setCards(prev => prev.map(c => c.id === card.id ? data.card as Card : c))
     } else {
-      setMessage(`Error: ${data.error ?? 'Failed to update card'}`)
+      setMessage(`Error: ${data.error ?? 'No se pudo actualizar la carta'}`)
     }
   }
 
@@ -126,7 +127,7 @@ export default function AdminCardsPage() {
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="text-white animate-pulse">Loading...</div>
+      <div className="text-white animate-pulse">Cargando catálogo...</div>
     </div>
   )
 
@@ -136,14 +137,14 @@ export default function AdminCardsPage() {
 
         <div className="flex items-center justify-between mb-6">
           <div>
-            <Link href="/admin" className="text-gray-500 hover:text-gray-300 text-sm">Back to Admin</Link>
-            <h1 className="text-2xl font-bold text-white mt-1">Manage Cards</h1>
+            <Link href="/admin" className="text-gray-500 hover:text-gray-300 text-sm">Volver al panel</Link>
+            <h1 className="text-2xl font-bold text-white mt-1">Gestionar cartas</h1>
           </div>
           <button
             onClick={() => setEditing(EMPTY_CARD)}
             className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 rounded-xl transition"
           >
-            + Add Card
+            Añadir carta
           </button>
         </div>
 
@@ -153,26 +154,26 @@ export default function AdminCardsPage() {
           }`}>{message}</div>
         )}
 
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
           {['all', 'legendary', 'rare', 'uncommon', 'common'].map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition ${
                 filter === f ? 'bg-white/20 text-white' : 'text-gray-500 hover:text-gray-300'
               }`}>
-              {f} {f !== 'all' && `(${cards.filter(c => c.rarity === f).length})`}
+              {f === 'all' ? 'Todas' : f} {f !== 'all' && `(${cards.filter(c => c.rarity === f).length})`}
             </button>
           ))}
         </div>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
+        <div className="hidden bg-gray-900 rounded-2xl border border-gray-800 overflow-x-auto md:block">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-800">
-                <th className="text-left text-gray-400 text-xs p-4">Card</th>
-                <th className="text-left text-gray-400 text-xs p-4">Rarity</th>
-                <th className="text-left text-gray-400 text-xs p-4">Weight</th>
-                <th className="text-left text-gray-400 text-xs p-4">Status</th>
-                <th className="text-left text-gray-400 text-xs p-4">Actions</th>
+                <th className="text-left text-gray-400 text-xs p-4">Carta</th>
+                <th className="text-left text-gray-400 text-xs p-4">Rareza</th>
+                <th className="text-left text-gray-400 text-xs p-4">Peso</th>
+                <th className="text-left text-gray-400 text-xs p-4">Estado</th>
+                <th className="text-left text-gray-400 text-xs p-4">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -205,13 +206,13 @@ export default function AdminCardsPage() {
                           ? 'bg-green-500/20 text-green-400 hover:bg-red-500/20 hover:text-red-400'
                           : 'bg-red-500/20 text-red-400 hover:bg-green-500/20 hover:text-green-400'
                       }`}>
-                      {card.is_active ? 'Active' : 'Inactive'}
+                      {card.is_active ? 'Activa' : 'Inactiva'}
                     </button>
                   </td>
                   <td className="p-4">
                     <button onClick={() => setEditing(card)}
                       className="text-purple-400 hover:text-purple-300 text-xs font-semibold transition">
-                      Edit
+                      Editar
                     </button>
                   </td>
                 </tr>
@@ -220,35 +221,56 @@ export default function AdminCardsPage() {
           </table>
         </div>
 
+        <div className="space-y-3 md:hidden">
+          {filtered.map(card => (
+            <article key={card.id} className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+              <div className="flex items-start gap-3">
+                {card.image_url && <img src={card.image_url} alt={card.name} className="h-14 w-14 shrink-0 rounded-lg bg-white/5 object-contain p-1" />}
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-white">{card.name}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-gray-500">{card.description}</p>
+                  <p className={`mt-2 text-xs font-bold capitalize ${rarityColor[card.rarity]}`}>{card.rarity} · peso {card.drop_weight}</p>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button onClick={() => void toggleActive(card)} className={`rounded-lg px-3 py-2 text-sm font-bold ${card.is_active ? 'bg-green-500/15 text-green-300' : 'bg-red-500/15 text-red-300'}`}>
+                  {card.is_active ? 'Activa' : 'Inactiva'}
+                </button>
+                <button onClick={() => setEditing(card)} className="rounded-lg bg-purple-500/15 px-3 py-2 text-sm font-bold text-purple-300">Editar</button>
+              </div>
+            </article>
+          ))}
+        </div>
+
         {editing && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
             <div className="bg-gray-900 rounded-2xl border border-gray-700 p-6 w-full max-w-md">
               <h2 className="text-white font-bold text-xl mb-4">
-                {editing.id ? 'Edit Card' : 'Add New Card'}
+                {editing.id ? 'Editar carta' : 'Añadir carta'}
               </h2>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Name</label>
+                  <label className="text-gray-400 text-xs mb-1 block">Nombre</label>
                   <input value={editing.name ?? ''} onChange={e => setEditing(p => ({ ...p!, name: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"/>
                 </div>
 
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Description</label>
+                  <label className="text-gray-400 text-xs mb-1 block">Descripción</label>
                   <input value={editing.description ?? ''} onChange={e => setEditing(p => ({ ...p!, description: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"/>
                 </div>
 
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Image URL</label>
+                  <label className="text-gray-400 text-xs mb-1 block">URL de imagen</label>
                   <input value={editing.image_url ?? ''} onChange={e => setEditing(p => ({ ...p!, image_url: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"/>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-gray-400 text-xs mb-1 block">Rarity</label>
+                    <label className="text-gray-400 text-xs mb-1 block">Rareza</label>
                     <select value={editing.rarity ?? 'common'} onChange={e => setEditing(p => ({ ...p!, rarity: e.target.value }))}
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500">
                       <option value="common">Common</option>
@@ -258,7 +280,7 @@ export default function AdminCardsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-gray-400 text-xs mb-1 block">Drop Weight</label>
+                    <label className="text-gray-400 text-xs mb-1 block">Peso de aparición</label>
                     <input type="number" min={1} max={100}
                       value={editing.drop_weight ?? 10}
                       onChange={e => setEditing(p => ({ ...p!, drop_weight: Number(e.target.value) }))}
@@ -277,11 +299,11 @@ export default function AdminCardsPage() {
               <div className="flex gap-3 mt-6">
                 <button onClick={() => setEditing(null)}
                   className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-xl transition">
-                  Cancel
+                  Cancelar
                 </button>
                 <button onClick={saveCard} disabled={saving}
                   className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-2 rounded-xl transition">
-                  {saving ? 'Saving...' : 'Save Card'}
+                  {saving ? 'Guardando...' : 'Guardar carta'}
                 </button>
               </div>
             </div>

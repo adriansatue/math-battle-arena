@@ -18,6 +18,7 @@ type QueryMock = QueryResult & {
   or: ReturnType<typeof vi.fn>
   order: ReturnType<typeof vi.fn>
   limit: ReturnType<typeof vi.fn>
+  range: ReturnType<typeof vi.fn>
   single: ReturnType<typeof vi.fn>
   maybeSingle: ReturnType<typeof vi.fn>
   insert: ReturnType<typeof vi.fn>
@@ -82,6 +83,7 @@ function createQueryMock(result: QueryResult): QueryMock {
   query.or = vi.fn(chain)
   query.order = vi.fn(chain)
   query.limit = vi.fn(chain)
+  query.range = vi.fn(chain)
   query.insert = vi.fn(chain)
   query.update = vi.fn(chain)
   query.upsert = vi.fn(chain)
