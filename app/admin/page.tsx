@@ -421,7 +421,7 @@ export default function AdminPage() {
                   <th className="px-4 py-3 text-right">Acierto</th>
                   <th className="px-4 py-3 text-right">Tiempo</th>
                   <th className="px-4 py-3 text-right">Puntos</th>
-                  <th className="px-4 py-3 text-right">Rating</th>
+                  <th className="px-4 py-3 text-right">PvP Rating</th>
                   <th className="px-4 py-3 text-right">W/L</th>
                   <th className="px-4 py-3 text-right">Cartas</th>
                   <th className="px-4 py-3 text-right">Flags</th>

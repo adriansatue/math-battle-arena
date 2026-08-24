@@ -115,8 +115,8 @@ export default function HowItWorksPage() {
           </div>
         </section>
 
-        <section className="rounded-lg border border-white/10 bg-white/[0.06] p-6">
-          <h2 className="text-2xl font-black text-white">XP, Coins, and Rating</h2>
+        <section id="rating" className="scroll-mt-20 rounded-lg border border-white/10 bg-white/[0.06] p-6">
+          <h2 className="text-2xl font-black text-white">XP, Coins, and PvP Rating</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             <InfoBlock
               title="XP"
@@ -127,9 +127,20 @@ export default function HowItWorksPage() {
               text="Coins are spendable rewards. Use them to open packs and build your card collection."
             />
             <InfoBlock
-              title="Rating"
-              text="Rating measures PvP performance. It only changes in real player-versus-player battles."
+              title="PvP Rating"
+              text="PvP Rating starts at 1000 and measures competitive performance. It only changes in real player-versus-player battles."
             />
+          </div>
+          <div className="mt-5 border-l-4 border-cyan-300 bg-cyan-300/[0.07] p-4 sm:p-5">
+            <h3 className="font-black text-white">How to read your PvP Rating</h3>
+            <p className="mt-2 text-sm leading-relaxed text-white/65">
+              The system compares your rating with your opponent&apos;s before each PvP battle. Against an equally rated player,
+              a win is usually worth about +16 and a loss about -16. Beating a stronger opponent earns more; losing to one costs less.
+              A rating of 1004 simply means you are 4 points above the 1000 starting point.
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-white/45">
+              Practice and bot battles never change PvP Rating. XP, coins, battle score, and account level are separate systems.
+            </p>
           </div>
         </section>
 
@@ -146,7 +157,7 @@ export default function HowItWorksPage() {
                   <th className="py-3 pr-4">Mode</th>
                   <th className="py-3 pr-4">XP</th>
                   <th className="py-3 pr-4">Coins</th>
-                  <th className="py-3 pr-4">Rating</th>
+                  <th className="py-3 pr-4">PvP Rating</th>
                   <th className="py-3 pr-4">Record</th>
                 </tr>
               </thead>

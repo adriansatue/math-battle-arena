@@ -238,7 +238,7 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                   <p className={`text-2xl font-black ${reward.rating_delta >= 0 ? 'text-cyan-300' : 'text-rose-300'}`}>
                     {signedNumber(reward.rating_delta)}
                   </p>
-                  <p className="mt-1 text-xs text-white/45">Rating</p>
+                  <p className="mt-1 text-xs text-white/45">PvP Rating</p>
                 </div>
               </div>
 

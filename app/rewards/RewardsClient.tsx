@@ -109,11 +109,18 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
   }
 
   async function showcaseCard(inventoryId: string) {
+    setError(null)
+    setNotice(null)
     const response = await fetch('/api/collection', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ showcased_inventory_id: inventoryId }),
     })
-    if (response.ok) setCollection(current => ({ ...current, showcased_inventory_id: inventoryId }))
+    if (response.ok) {
+      setCollection(current => ({ ...current, showcased_inventory_id: inventoryId }))
+      setNotice('Profile emblem updated.')
+      return
+    }
+    setError('Could not update your profile emblem.')
   }
 
   async function claimSet(setKey: string) {
@@ -259,6 +266,10 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
         </div>
 
         {/* Rarity counts */}
+        <div id="collection" className="mb-3 scroll-mt-4">
+          <h2 className="text-lg font-black text-white">Choose your profile emblem</h2>
+          <p className="mt-1 text-xs text-white/45">Your selected card artwork appears as your public player identity.</p>
+        </div>
         <div className="grid grid-cols-4 gap-2 mb-4">
           {[
             { key: 'legendary', label: '⭐ Legendary', color: 'text-yellow-400' },
@@ -342,7 +353,7 @@ export default function RewardsClient({ initialInventory, initialPoints, totalCa
                   grade={item.grade ?? undefined}
                 />
                 <button type="button" onClick={() => showcaseCard(item.id)} className={`mt-2 text-xs font-bold ${collection.showcased_inventory_id === item.id ? 'text-cyan-300' : 'text-white/35 hover:text-white'}`}>
-                  {collection.showcased_inventory_id === item.id ? 'Showcased' : 'Set as showcase'}
+                  {collection.showcased_inventory_id === item.id ? 'Profile emblem' : 'Use as emblem'}
                 </button>
               </div>
             ))}

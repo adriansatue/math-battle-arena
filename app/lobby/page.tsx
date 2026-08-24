@@ -302,13 +302,13 @@ export default function LobbyPage() {
               </div>
               <div className="hidden grid-cols-3 gap-2 sm:grid">
                 <PlayerMetric label="Level" value={formatNumber(profile?.level ?? 1)} />
-                <PlayerMetric label="Rating" value={formatNumber(profile?.rating ?? 1000)} />
+                <PlayerMetric label="PvP Rating" value={formatNumber(profile?.rating ?? 1000)} />
                 <PlayerMetric label="Coins" value={formatNumber(profile?.points_balance ?? profile?.total_points ?? 0)} />
               </div>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2 sm:hidden">
               <PlayerMetric label="Level" value={formatNumber(profile?.level ?? 1)} />
-              <PlayerMetric label="Rating" value={formatNumber(profile?.rating ?? 1000)} />
+              <PlayerMetric label="PvP Rating" value={formatNumber(profile?.rating ?? 1000)} />
               <PlayerMetric label="Coins" value={formatNumber(profile?.points_balance ?? profile?.total_points ?? 0)} />
             </div>
           </div>

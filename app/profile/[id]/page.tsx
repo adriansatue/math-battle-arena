@@ -39,9 +39,37 @@ interface ShowcaseCard {
   grade: number | null
   reward_catalog: {
     name: string
-    rarity: string
+    rarity: 'common' | 'uncommon' | 'rare' | 'legendary'
     image_url: string
   }
+}
+
+const SHOWCASE_STYLE = {
+  common: {
+    frame: 'border-slate-300/60 bg-slate-400/10 shadow-slate-950/30',
+    label: 'text-slate-200',
+  },
+  uncommon: {
+    frame: 'border-emerald-300/70 bg-emerald-400/10 shadow-emerald-950/30',
+    label: 'text-emerald-200',
+  },
+  rare: {
+    frame: 'border-cyan-300/75 bg-cyan-400/10 shadow-cyan-950/35',
+    label: 'text-cyan-200',
+  },
+  legendary: {
+    frame: 'border-amber-300/80 bg-amber-400/10 shadow-amber-950/40',
+    label: 'text-amber-200',
+  },
+} as const
+
+const GRADE_LABEL: Record<number, string> = {
+  10: 'Gem Mint',
+  9: 'Mint',
+  8: 'NM-MT',
+  7: 'Near Mint',
+  6: 'EX-MT',
+  5: 'Excellent',
 }
 
 const categoryEmoji: Record<string, string> = {
@@ -66,6 +94,7 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
   const [email,           setEmail]           = useState<string | null>(null)
   const [loading,         setLoading]         = useState(true)
   const [showcase,        setShowcase]        = useState<ShowcaseCard | null>(null)
+  const [emblemImageFailed, setEmblemImageFailed] = useState(false)
 
   // Username change form state
   const [usernameInput,   setUsernameInput]   = useState('')
@@ -75,38 +104,47 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
   const [linkError,       setLinkError]       = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
+      const isOwner = user?.id === id
+
+      const profileRequest = supabase.from('profiles').select('*').eq('id', id).single()
+      const showcaseRequest = fetch(`/api/profile/${id}/showcase`, { cache: 'no-store' })
+        .then(async response => response.ok
+          ? await response.json() as { showcase: ShowcaseCard | null }
+          : { showcase: null })
+        .catch(() => ({ showcase: null }))
+      const weaknessesRequest = isOwner
+        ? supabase
+            .from('student_weaknesses')
+            .select('*')
+            .eq('user_id', id)
+            .order('accuracy_rate', { ascending: true })
+        : Promise.resolve({ data: null })
+
+      const [{ data: prof }, showcaseData, { data: weaknessData }] = await Promise.all([
+        profileRequest,
+        showcaseRequest,
+        weaknessesRequest,
+      ])
+
+      if (cancelled) return
+
+      if (!prof) { router.push('/leaderboard'); return }
+      setProfile(prof as Profile)
+      setShowcase(showcaseData.showcase)
 
       if (user) {
         setIsAuthenticated(true)
         setIsAnonymous(Boolean(user.is_anonymous))
-        setIsMe(user.id === id)
-        if (user.id === id) setEmail(user.email ?? null)
+        setIsMe(isOwner)
+        if (isOwner) setEmail(user.email ?? null)
       }
 
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', id)
-        .single()
-
-      if (!prof) { router.push('/leaderboard'); return }
-      setProfile(prof as Profile)
-
-      const showcaseResponse = await fetch(`/api/profile/${id}/showcase`, { cache: 'no-store' })
-      if (showcaseResponse.ok) {
-        const showcaseData = await showcaseResponse.json() as { showcase: ShowcaseCard | null }
-        setShowcase(showcaseData.showcase)
-      }
-
-      if (user?.id === id) {
-        const { data: w } = await supabase
-          .from('student_weaknesses')
-          .select('*')
-          .eq('user_id', id)
-          .order('accuracy_rate', { ascending: true })
-        const loadedWeaknesses = (w as Weakness[]) ?? []
+      if (isOwner) {
+        const loadedWeaknesses = (weaknessData as Weakness[]) ?? []
         setWeaknesses(loadedWeaknesses)
 
         const focus = loadedWeaknesses[0]
@@ -122,7 +160,8 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
 
       setLoading(false)
     }
-    load()
+    void load()
+    return () => { cancelled = true }
   }, [id, router, supabase])
 
   async function linkGoogleAccount() {
@@ -168,6 +207,7 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
                          'from-gray-500 to-gray-600'
   const primaryFocus = weaknesses[0]
   const primaryInsight = primaryFocus ? getTopicInsight(primaryFocus) : null
+  const showcaseStyle = showcase ? SHOWCASE_STYLE[showcase.reward_catalog.rarity] : null
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-indigo-900 px-4 pb-16 pt-5 text-white sm:px-6">
@@ -183,29 +223,74 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
 
         <section className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.08] shadow-2xl shadow-purple-950/30 backdrop-blur-sm">
           <div className="p-5 sm:p-6">
-            <div className="flex items-center gap-4">
-            <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${levelColor} text-2xl font-black text-white shadow-lg sm:h-20 sm:w-20 sm:text-3xl`}>
-              {profile.username.charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-2xl font-black tracking-tight text-white sm:text-3xl">{profile.username}</h1>
-              <p className={`mt-0.5 bg-gradient-to-r ${levelColor} bg-clip-text text-sm font-bold text-transparent`}>
-                {displayRankTitle}
-              </p>
-              <p className="mt-1 text-xs text-white/40">
-                Joined {new Date(profile.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
-              </p>
-            </div>
-            {showcase && (
-              <div className="hidden w-20 shrink-0 text-center sm:block">
-                <div className="relative mx-auto h-16 w-16 overflow-hidden border border-cyan-300/30 bg-black/20">
-                  <Image src={showcase.reward_catalog.image_url} alt={showcase.reward_catalog.name} fill className="object-contain p-1" />
+            <div className="flex items-start gap-4 sm:gap-5">
+              <figure className="w-20 shrink-0 text-center sm:w-24">
+                <div
+                  className={`relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border-2 shadow-xl sm:h-24 sm:w-24 ${
+                    showcaseStyle?.frame ?? `border-white/15 bg-gradient-to-br ${levelColor} shadow-purple-950/30`
+                  }`}
+                >
+                  {showcase?.reward_catalog.image_url && !emblemImageFailed ? (
+                    <Image
+                      src={showcase.reward_catalog.image_url}
+                      alt={`${showcase.reward_catalog.name} player emblem`}
+                      fill
+                      sizes="(min-width: 640px) 96px, 80px"
+                      className="object-contain p-1.5"
+                      onError={() => setEmblemImageFailed(true)}
+                    />
+                  ) : (
+                    <span className="text-3xl font-black text-white sm:text-4xl" aria-hidden="true">
+                      {profile.username.charAt(0).toUpperCase()}
+                    </span>
+                  )}
                 </div>
-                <p className="mt-1 truncate text-[10px] font-bold text-cyan-200">{showcase.reward_catalog.name}</p>
-                <p className="text-[9px] uppercase text-white/35">Showcase{showcase.grade ? ` · G${showcase.grade}` : ''}</p>
+                <figcaption className="mt-2 text-[10px] font-bold uppercase tracking-wide text-white/40">
+                  Player emblem
+                </figcaption>
+              </figure>
+
+              <div className="min-w-0 flex-1 pt-0.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h1 className="truncate text-2xl font-black tracking-tight text-white sm:text-3xl">{profile.username}</h1>
+                    <p className={`mt-0.5 bg-gradient-to-r ${levelColor} bg-clip-text text-sm font-bold text-transparent`}>
+                      {displayRankTitle}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-lg border border-white/10 bg-black/15 px-2.5 py-1 text-xs font-black text-white/80">
+                    Lv. {displayLevel}
+                  </span>
+                </div>
+
+                {showcase ? (
+                  <div className="mt-2 min-w-0">
+                    <p className={`truncate text-sm font-bold ${showcaseStyle?.label}`} title={showcase.reward_catalog.name}>
+                      {showcase.reward_catalog.name}
+                    </p>
+                    <p className="text-xs capitalize text-white/40">
+                      {showcase.reward_catalog.rarity}
+                      {showcase.grade ? ` · ${GRADE_LABEL[showcase.grade] ?? `Grade ${showcase.grade}`}` : ''}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-white/40">
+                    {isMe ? 'Choose a card to make this profile yours.' : 'No card emblem selected.'}
+                  </p>
+                )}
+
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <p className="text-xs text-white/40">
+                    Joined {new Date(profile.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                  </p>
+                  {isMe && (
+                    <Link href="/rewards#collection" className="text-xs font-bold text-cyan-200 transition hover:text-white">
+                      {showcase ? 'Change emblem' : 'Choose emblem'} →
+                    </Link>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+            </div>
 
           <div className="mt-5 rounded-xl border border-white/10 bg-black/15 p-3.5">
             <div className="mb-2 flex items-end justify-between gap-3">
@@ -221,7 +306,14 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
                 {levelProgress.isMaxLevel && <p>Max Level {MAX_LEVEL}</p>}
               </div>
             </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-2.5 overflow-hidden rounded-full bg-white/10"
+              role="progressbar"
+              aria-label={`Progress through Level ${displayLevel}`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={levelProgress.progressPercent}
+            >
               <div
                 className={`h-full rounded-full bg-gradient-to-r ${levelColor} transition-all duration-1000`}
                 style={{ width: `${levelProgress.progressPercent}%` }}
@@ -230,20 +322,34 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
           </div>
           </div>
 
-          <div className="grid grid-cols-3 border-t border-white/10 bg-black/10 sm:grid-cols-6">
+          <div className="border-t border-white/10 bg-black/10 p-3 sm:p-4">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">
+              Competitive snapshot
+            </p>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.07] sm:grid-cols-4">
             {[
-              { label: 'Rating', value: profile.rating ?? 1000 },
+              { label: 'PvP Rating', value: profile.rating ?? 1000 },
               { label: 'Battles', value: totalBattles },
-              { label: 'Wins', value: profile.wins },
-              { label: 'Win rate', value: `${winRate}%` },
-              { label: 'Streak', value: profile.current_streak },
-              { label: 'Best streak', value: profile.best_streak },
+              { label: 'Record', value: `${profile.wins}–${profile.losses}` },
+              { label: 'Win rate', value: totalBattles > 0 ? `${winRate}%` : '—' },
             ].map(stat => (
-              <div key={stat.label} className="border-b border-r border-white/[0.07] px-2 py-3 text-center sm:border-b-0">
-                <div className="text-base font-black text-white">{stat.value}</div>
+              <div key={stat.label} className="bg-[#17142b] px-3 py-3 text-center">
+                <div className="text-lg font-black text-white">{stat.value}</div>
                 <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-purple-200/45">{stat.label}</div>
               </div>
             ))}
+            </div>
+            <dl className="mt-3 flex items-center justify-center gap-5 text-xs text-white/45">
+              <div className="flex items-center gap-1.5">
+                <dt>Current win streak</dt>
+                <dd className="font-black text-white/80">{profile.current_streak}</dd>
+              </div>
+              <span className="h-3 w-px bg-white/10" aria-hidden="true" />
+              <div className="flex items-center gap-1.5">
+                <dt>Best</dt>
+                <dd className="font-black text-white/80">{profile.best_streak}</dd>
+              </div>
+            </dl>
           </div>
         </section>
 
@@ -304,9 +410,19 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
               </div>
             )}
 
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-purple-200/45">All topics</h3>
-            <div className="space-y-4">
-              {weaknesses.map(w => {
+            {weaknesses.length > 1 && (
+              <details className="group border-t border-white/10 pt-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 marker:content-none">
+                  <span className="text-xs font-bold uppercase tracking-[0.14em] text-purple-200/55">
+                    Other topic insights
+                  </span>
+                  <span className="flex items-center gap-2 text-xs text-white/35">
+                    {weaknesses.length - 1}
+                    <span className="text-base transition group-open:rotate-45" aria-hidden="true">+</span>
+                  </span>
+                </summary>
+                <div className="mt-4 space-y-4">
+              {weaknesses.slice(1).map(w => {
                 const insight = getTopicInsight(w)
                 const pct   = insight.accuracyPercent
                 const color = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-yellow-500' : 'bg-red-500'
@@ -323,7 +439,14 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
                         }`}>{pct}%</span>
                       </div>
                     </div>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-2 overflow-hidden rounded-full bg-white/10"
+                      role="progressbar"
+                      aria-label={`${w.category.replaceAll('_', ' ')} accuracy`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={pct}
+                    >
                       <div className={`h-full rounded-full ${color} transition-all duration-700`}
                         style={{ width: `${pct}%` }}/>
                     </div>
@@ -331,7 +454,9 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
                   </div>
                 )
               })}
-            </div>
+                </div>
+              </details>
+            )}
           </section>
         )}
 
@@ -349,19 +474,25 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
         )}
 
         {isMe && (
-          <section className="rounded-2xl border border-white/15 bg-white/[0.07] p-5 backdrop-blur-sm sm:p-6">
-            <div className="flex items-start justify-between gap-4">
+          <details open={isAnonymous} className="group rounded-2xl border border-white/15 bg-white/[0.05] backdrop-blur-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 marker:content-none sm:px-6">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-purple-300/60">Private</p>
                 <h2 className="mt-1 text-lg font-black text-white">Account</h2>
+                <p className="mt-1 text-xs text-white/40">Email, reminders and username settings</p>
               </div>
-              <button onClick={() => logout()} className="text-xs font-semibold text-red-200/60 transition hover:text-red-200">
-                Sign out
-              </button>
-            </div>
+              <span className="text-xl text-white/35 transition group-open:rotate-45" aria-hidden="true">+</span>
+            </summary>
+
+            <div className="border-t border-white/10 px-5 pb-5 sm:px-6 sm:pb-6">
+              <div className="flex justify-end py-3">
+                <button onClick={() => logout()} className="text-xs font-semibold text-red-200/60 transition hover:text-red-200">
+                  Sign out
+                </button>
+              </div>
 
             {isAnonymous && (
-              <div className="mt-4 border-y border-purple-300/20 bg-purple-400/[0.08] px-1 py-4">
+              <div className="border-y border-purple-300/20 bg-purple-400/[0.08] px-1 py-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="text-sm font-black text-white">Save this guest account</h3>
@@ -453,7 +584,8 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
                 )}
               </div>
             )}
-          </section>
+            </div>
+          </details>
         )}
 
         {/* Social login prompt for unauthenticated visitors */}

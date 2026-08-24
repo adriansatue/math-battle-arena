@@ -18,8 +18,8 @@ const XP_TYPES = [
     text: 'Coins are spendable rewards. Use them to open packs and build your card collection.',
   },
   {
-    title: 'Rating',
-    text: 'Rating measures competitive PvP performance. Practice does not change your rating.',
+    title: 'PvP Rating',
+    text: 'PvP Rating starts at 1000. Wins against real players raise it and losses lower it; practice and bot battles do not change it.',
   },
 ]
 
