@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import Image from 'next/image'
 import { getLevelAndRank } from '@/lib/game/scoring'
 import type { WeeklyCompetitionSummary } from '@/lib/game/weekly-competition'
 import { recordClientEvent } from '@/lib/events/client'
@@ -17,6 +18,15 @@ interface Player {
   wins:          number
   losses:        number
   best_streak:   number
+  board_rank:    number
+  emblem:        PlayerEmblem | null
+}
+
+interface PlayerEmblem {
+  name:      string
+  rarity:    string
+  image_url: string
+  grade:     number | null
 }
 
 type Bracket = 'all' | 'starter' | 'builder' | 'challenger' | 'solver' | 'strategist' | 'specialist' | 'expert' | 'contender' | 'elite' | 'master'
@@ -45,6 +55,42 @@ function withComputedProgress(player: Player): Player {
   }
 }
 
+const EMBLEM_FRAME: Record<string, string> = {
+  common: 'border-slate-300/50 bg-slate-700',
+  uncommon: 'border-emerald-300/70 bg-emerald-950',
+  rare: 'border-sky-300/70 bg-sky-950',
+  epic: 'border-fuchsia-300/70 bg-fuchsia-950',
+  legendary: 'border-amber-300/80 bg-amber-950',
+}
+
+function PlayerEmblemAvatar({ player, size = 'list' }: { player: Player; size?: 'list' | 'podium' }) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const dimension = size === 'podium' ? 'h-14 w-14' : 'h-11 w-11'
+  const frame = player.emblem ? EMBLEM_FRAME[player.emblem.rarity] ?? EMBLEM_FRAME.common : 'border-white/15 bg-white/10'
+
+  return (
+    <div
+      className={`${dimension} relative shrink-0 overflow-hidden rounded-full border-2 ${frame}`}
+      title={player.emblem?.name ?? `${player.username}'s profile`}
+    >
+      {player.emblem?.image_url && !imageFailed ? (
+        <Image
+          src={player.emblem.image_url}
+          alt={`${player.username}'s ${player.emblem.name} emblem`}
+          fill
+          sizes={size === 'podium' ? '56px' : '44px'}
+          className="object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center text-sm font-black text-white">
+          {player.username.charAt(0).toUpperCase()}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function LeaderboardPage() {
   const [players,      setPlayers]      = useState<Player[]>([])
   const [loading,      setLoading]      = useState(true)
@@ -56,10 +102,12 @@ export default function LeaderboardPage() {
   const [nearMyLevel,  setNearMyLevel]  = useState(false)
   const [weekly,       setWeekly]       = useState<WeeklyCompetitionSummary | null>(null)
   const [claiming,     setClaiming]     = useState(false)
+  const [loadError,    setLoadError]    = useState('')
 
   useEffect(() => {
     async function load() {
       setLoading(true)
+      setLoadError('')
       const supabase = createClient()
 
       const { data: { user } } = await supabase.auth.getUser()
@@ -76,34 +124,24 @@ export default function LeaderboardPage() {
         }
       }
 
-      if (timePeriod === 'alltime') {
+      if (timePeriod === 'alltime' || timePeriod === 'rating') {
         setWeekly(null)
-        // Fetch all-time leaderboard
-        const { data } = await supabase
-          .from('profiles')
-          .select('id, username, total_points, rating, level, rank_title, wins, losses, best_streak')
-          .neq('rank_title', 'AI Challenger')
-          .not('username', 'ilike', '%MathBot%')
-          .order('total_points', { ascending: false })
-          .limit(50)
-
-        setPlayers(((data as Player[] | null) ?? []).map(withComputedProgress))
-      } else if (timePeriod === 'rating') {
-        setWeekly(null)
-        const { data } = await supabase
-          .from('profiles')
-          .select('id, username, total_points, rating, level, rank_title, wins, losses, best_streak')
-          .neq('rank_title', 'AI Challenger')
-          .not('username', 'ilike', '%MathBot%')
-          .order('rating', { ascending: false })
-          .limit(50)
-
-        setPlayers(((data as Player[] | null) ?? []).map(withComputedProgress))
+        const response = await fetch(`/api/leaderboard?order=${timePeriod === 'rating' ? 'rating' : 'xp'}`, { cache: 'no-store' })
+        if (!response.ok) {
+          setPlayers([])
+          setLoadError('The rankings could not be loaded. Please try again.')
+        } else {
+          const result = await response.json() as { players: Player[] }
+          setPlayers(result.players.map(withComputedProgress))
+        }
       } else {
         const response = await fetch('/api/weekly-competition', { cache: 'no-store' })
         if (!response.ok) {
           setWeekly(null)
           setPlayers([])
+          setLoadError(response.status === 401
+            ? 'Sign in to view your weekly division.'
+            : 'The weekly rankings could not be loaded. Please try again.')
         } else {
           const summary = await response.json() as WeeklyCompetitionSummary
           setWeekly(summary)
@@ -121,6 +159,8 @@ export default function LeaderboardPage() {
             wins: entry.battles_won,
             losses: Math.max(0, entry.battles_completed - entry.battles_won),
             best_streak: 0,
+            board_rank: entry.rank,
+            emblem: 'emblem' in entry ? entry.emblem as PlayerEmblem | null : null,
           })))
         }
       }
@@ -334,6 +374,12 @@ export default function LeaderboardPage() {
         </div>
 
         {/* Empty bracket state */}
+        {loadError && (
+          <div role="alert" className="mb-6 border border-rose-300/30 bg-rose-950/30 px-4 py-3 text-center text-sm font-semibold text-rose-100">
+            {loadError}
+          </div>
+        )}
+
         {filtered.length === 0 && (
           <div className="text-center py-16 text-purple-300">
             <div className="text-5xl mb-4">{nearMyLevel ? '±10' : activeBracket.emoji}</div>
@@ -356,6 +402,7 @@ export default function LeaderboardPage() {
             {/* 2nd place */}
             <div className="bg-white/10 rounded-2xl p-4 text-center border border-white/20 mt-6">
               <div className="text-3xl mb-2">🥈</div>
+              <div className="mb-2 flex justify-center"><PlayerEmblemAvatar player={filtered[1]} size="podium" /></div>
               <p className="text-white font-bold text-sm truncate">{filtered[1].username}</p>
               <p className={`text-xs font-semibold ${levelColor(filtered[1].level)}`}>
                 Lv.{filtered[1].level}
@@ -367,6 +414,7 @@ export default function LeaderboardPage() {
             {/* 1st place */}
             <div className="bg-gradient-to-b from-yellow-500/20 to-yellow-600/10 rounded-2xl p-4 text-center border border-yellow-500/40">
               <div className="text-4xl mb-2">👑</div>
+              <div className="mb-2 flex justify-center"><PlayerEmblemAvatar player={filtered[0]} size="podium" /></div>
               <p className="text-white font-bold truncate">{filtered[0].username}</p>
               <p className={`text-xs font-semibold ${levelColor(filtered[0].level)}`}>
                 Lv.{filtered[0].level} · {filtered[0].rank_title}
@@ -391,6 +439,7 @@ export default function LeaderboardPage() {
                   <text x="24" y="34" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#7B4A10" fontFamily="Arial, sans-serif">3</text>
                 </svg>
               </div>
+              <div className="mb-2 flex justify-center"><PlayerEmblemAvatar player={filtered[2]} size="podium" /></div>
               <p className="text-white font-bold text-sm truncate">{filtered[2].username}</p>
               <p className={`text-xs font-semibold ${levelColor(filtered[2].level)}`}>
                 Lv.{filtered[2].level}
@@ -404,7 +453,7 @@ export default function LeaderboardPage() {
         {/* Full list */}
         {filtered.length > 0 && (
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden">
-          {filtered.map((player, i) => {
+          {filtered.map((player) => {
             const isMe      = player.id === currentId
             const winRate   = player.wins + player.losses > 0
               ? Math.round((player.wins / (player.wins + player.losses)) * 100)
@@ -418,18 +467,14 @@ export default function LeaderboardPage() {
 
                   {/* Rank */}
                   <div className="w-10 text-center text-lg font-bold">
-                    {typeof rankEmoji(i) === 'string' && rankEmoji(i).startsWith('#')
-                      ? <span className="text-white/40 text-sm">{rankEmoji(i)}</span>
-                      : <span>{rankEmoji(i)}</span>
+                    {typeof rankEmoji(player.board_rank - 1) === 'string' && rankEmoji(player.board_rank - 1).startsWith('#')
+                      ? <span className="text-white/40 text-sm">{rankEmoji(player.board_rank - 1)}</span>
+                      : <span>{rankEmoji(player.board_rank - 1)}</span>
                     }
                   </div>
 
-                  {/* Avatar placeholder */}
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                    isMe ? 'bg-purple-600' : 'bg-white/20'
-                  }`}>
-                    {player.username.charAt(0).toUpperCase()}
-                  </div>
+                  {/* Profile emblem */}
+                  <PlayerEmblemAvatar player={player} />
 
                   {/* Name + rank */}
                   <div className="flex-1 min-w-0">
@@ -471,9 +516,9 @@ export default function LeaderboardPage() {
             className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition text-center">
             ⚔️ Play
           </Link>
-          <Link href={`/profile/${currentId}`}
+          <Link href={currentId ? `/profile/${currentId}` : '/login'}
             className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition text-center">
-            👤 My Profile
+            {currentId ? '👤 My Profile' : 'Sign in'}
           </Link>
         </div>
 

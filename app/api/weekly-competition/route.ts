@@ -9,11 +9,26 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data, error } = await createAdminClient().rpc('get_weekly_competition_summary', {
+  const admin = createAdminClient()
+  const { data, error } = await admin.rpc('get_weekly_competition_summary', {
     p_user_id: user.id,
   })
   if (error) return NextResponse.json({ error: 'Could not load weekly competition' }, { status: 500 })
-  return NextResponse.json(data)
+
+  const summary = data as { leaderboard?: { user_id: string }[] }
+  const userIds = summary.leaderboard?.map(entry => entry.user_id) ?? []
+  const { data: identities, error: identitiesError } = await admin.rpc('get_registered_player_emblems', {
+    p_user_ids: userIds,
+  })
+  if (identitiesError) return NextResponse.json({ error: 'Could not load weekly competition' }, { status: 500 })
+
+  const identityMap = new Map((Array.isArray(identities) ? identities : []).map(identity => [identity.id, identity.emblem]))
+  return NextResponse.json({
+    ...summary,
+    leaderboard: (summary.leaderboard ?? [])
+      .filter(entry => identityMap.has(entry.user_id))
+      .map(entry => ({ ...entry, emblem: identityMap.get(entry.user_id) ?? null })),
+  })
 }
 
 export async function POST(request: Request) {
