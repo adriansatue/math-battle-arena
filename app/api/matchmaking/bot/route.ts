@@ -16,24 +16,48 @@ const BOT_META = {
   hard:   { email: 'bot-hard@mathbattle.internal',   username: '🤖 MathBot Hard',   level: 8 },
 }
 
+const AUTH_PAGE_SIZE = 1000
+
+async function findAuthUserByEmail(
+  adminSupabase: ReturnType<typeof createAdminClient>,
+  email: string
+) {
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await adminSupabase.auth.admin.listUsers({ page, perPage: AUTH_PAGE_SIZE })
+    if (error) throw new Error(`Failed to search bot auth user: ${error.message}`)
+
+    const found = data.users.find(user => user.email?.toLowerCase() === email.toLowerCase())
+    if (found) return found
+    if (data.users.length < AUTH_PAGE_SIZE) return null
+  }
+}
+
+async function syncBotProfile(
+  adminSupabase: ReturnType<typeof createAdminClient>,
+  botId: string,
+  diff: 'easy' | 'medium' | 'hard',
+  initializeStats = false
+) {
+  const meta = BOT_META[diff]
+  await adminSupabase.from('profiles').upsert({
+    id: botId,
+    username: meta.username,
+    level: meta.level,
+    rank_title: 'AI Challenger',
+    ...(initializeStats ? { total_points: 0, wins: 0, losses: 0 } : {}),
+  }, { onConflict: 'id' })
+}
+
 /** Looks up (or creates) a real auth user for the bot and returns their UUID. */
-async function getOrCreateBot(
+export async function getOrCreateBot(
   adminSupabase: ReturnType<typeof createAdminClient>,
   diff: 'easy' | 'medium' | 'hard'
 ) {
   const meta = BOT_META[diff]
 
-  // Check if the auth user already exists
-  const { data: existing } = await adminSupabase.auth.admin.listUsers()
-  const found = existing?.users?.find((u) => u.email === meta.email)
+  const found = await findAuthUserByEmail(adminSupabase, meta.email)
   if (found) {
-    // Only sync identity fields — never reset stats
-    await adminSupabase.from('profiles').upsert({
-      id:         found.id,
-      username:   meta.username,
-      level:      meta.level,
-      rank_title: 'AI Challenger',
-    }, { onConflict: 'id' })
+    await syncBotProfile(adminSupabase, found.id, diff)
     return found.id
   }
 
@@ -44,18 +68,17 @@ async function getOrCreateBot(
     email_confirm: true,
   })
   if (createErr || !created?.user) {
+    if (createErr?.message.toLowerCase().includes('already been registered')) {
+      const concurrentlyCreated = await findAuthUserByEmail(adminSupabase, meta.email)
+      if (concurrentlyCreated) {
+        await syncBotProfile(adminSupabase, concurrentlyCreated.id, diff)
+        return concurrentlyCreated.id
+      }
+    }
     throw new Error(`Failed to create bot auth user: ${createErr?.message}`)
   }
 
-  await adminSupabase.from('profiles').upsert({
-    id:           created.user.id,
-    username:     meta.username,
-    level:        meta.level,
-    rank_title:   'AI Challenger',
-    total_points: 0,
-    wins:         0,
-    losses:       0,
-  }, { onConflict: 'id' })
+  await syncBotProfile(adminSupabase, created.user.id, diff, true)
 
   return created.user.id
 }

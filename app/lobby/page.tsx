@@ -26,7 +26,7 @@ type IconProps = {
   className?: string
 }
 
-const BOT_FALLBACK_SECONDS = 5
+const BOT_OFFER_SECONDS = 5
 const DIFFICULTIES: Record<Difficulty, {
   label: string
   detail: string
@@ -76,12 +76,14 @@ export default function LobbyPage() {
   const [joinCode, setJoinCode] = useState('')
   const [joining, setJoining] = useState(false)
   const [inQueue, setInQueue] = useState(false)
+  const [startingBot, setStartingBot] = useState(false)
   const [queueTime, setQueueTime] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   const queueTimeRef = useRef(0)
   const queueInterval = useRef<NodeJS.Timeout | null>(null)
   const pollInterval = useRef<NodeJS.Timeout | null>(null)
+  const battleTransition = useRef(false)
 
   useEffect(() => {
     void recordClientEvent('lobby_viewed')
@@ -187,6 +189,7 @@ export default function LobbyPage() {
   }
 
   async function joinQueue() {
+    if (inQueue || startingBot || battleTransition.current) return
     setInQueue(true)
     setQueueTime(0)
     queueTimeRef.current = 0
@@ -213,63 +216,71 @@ export default function LobbyPage() {
     }
 
     if (data.matched) {
+      battleTransition.current = true
       await leaveQueue()
       router.push(`/battle/${data.battle_id}`)
       return
     }
 
     pollInterval.current = setInterval(async () => {
-      if (queueTimeRef.current >= BOT_FALLBACK_SECONDS) {
-        stopQueueTimers()
+      if (battleTransition.current) return
 
-        try {
-          const finalCheckRes = await fetch('/api/matchmaking/queue')
-          const finalCheckData = await finalCheckRes.json().catch(() => ({}))
-
-          if (finalCheckData.matched) {
-            setInQueue(false)
-            router.push(`/battle/${finalCheckData.battle_id}`)
-            return
-          }
-
-          const botRes = await fetch('/api/matchmaking/bot', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-              mode:           queueMode,
-              difficulty:     queueDiff,
-              bot_difficulty: queueDiff,
-            }),
-          })
-          const botData = await botRes.json()
-
-          if (botData.battle_id) {
-            setInQueue(false)
-            router.push(`/battle/${botData.battle_id}`)
-          } else {
-            setError(botData.error ?? 'Failed to start bot battle')
-            setInQueue(false)
-            setQueueTime(0)
-            queueTimeRef.current = 0
-          }
-        } catch (err) {
-          console.error('[joinQueue] bot fallback error:', err)
-          setError('Failed to start bot battle')
-          setInQueue(false)
-          setQueueTime(0)
-          queueTimeRef.current = 0
-        }
-        return
-      }
-
-      const checkRes = await fetch('/api/matchmaking/queue')
+      const checkRes = await fetch('/api/matchmaking/queue').catch(() => null)
+      if (!checkRes?.ok) return
       const checkData = await checkRes.json()
 
       if (checkData.matched) {
+        battleTransition.current = true
         await leaveQueue()
         router.push(`/battle/${checkData.battle_id}`)
       }
     }, 1000)
+  }
+
+  async function startBotBattle(checkForMatch = false) {
+    if (startingBot || battleTransition.current) return
+    battleTransition.current = true
+    setStartingBot(true)
+    setError(null)
+
+    try {
+      if (checkForMatch) {
+        const finalCheckRes = await fetch('/api/matchmaking/queue')
+        const finalCheckData = await finalCheckRes.json().catch(() => ({}))
+        if (finalCheckRes.ok && finalCheckData.matched) {
+          stopQueueTimers()
+          setInQueue(false)
+          router.push(`/battle/${finalCheckData.battle_id}`)
+          return
+        }
+      }
+
+      stopQueueTimers()
+      const botRes = await fetch('/api/matchmaking/bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: queueMode,
+          difficulty: queueDiff,
+          bot_difficulty: queueDiff,
+        }),
+      })
+      const botData = await botRes.json().catch(() => ({}))
+      if (!botRes.ok || !botData.battle_id) {
+        throw new Error(botData.error ?? 'Failed to start bot battle')
+      }
+
+      setInQueue(false)
+      router.push(`/battle/${botData.battle_id}`)
+    } catch (err) {
+      console.error('[startBotBattle] error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to start bot battle')
+      setInQueue(false)
+      setQueueTime(0)
+      queueTimeRef.current = 0
+      battleTransition.current = false
+      setStartingBot(false)
+    }
   }
 
   async function leaveQueue() {
@@ -277,6 +288,7 @@ export default function LobbyPage() {
     setInQueue(false)
     setQueueTime(0)
     queueTimeRef.current = 0
+    if (!battleTransition.current) setStartingBot(false)
     try {
       await fetch('/api/matchmaking/queue', { method: 'DELETE' })
     } catch {
@@ -284,7 +296,7 @@ export default function LobbyPage() {
     }
   }
 
-  const queueProgress = Math.min(100, (queueTime / BOT_FALLBACK_SECONDS) * 100)
+  const botAvailable = queueTime >= BOT_OFFER_SECONDS
   const selectedFriendDifficulty = DIFFICULTIES[difficulty]
 
   return (
@@ -314,19 +326,11 @@ export default function LobbyPage() {
           </div>
         </header>
 
-        <NewsletterConsentPrompt />
-
         {error && (
-          <div className="rounded-2xl border border-red-300/30 bg-red-500/15 px-4 py-3 text-sm text-red-100 shadow-lg shadow-red-950/20">
+          <div role="alert" className="rounded-2xl border border-red-300/30 bg-red-500/15 px-4 py-3 text-sm text-red-100 shadow-lg shadow-red-950/20">
             {error}
           </div>
         )}
-
-        <DailyObjectivesPanel
-          onBalanceChange={balance => setProfile(current => current
-            ? { ...current, points_balance: balance }
-            : current)}
-        />
 
         <section className="rounded-2xl border border-purple-300/25 bg-purple-500/15 p-4 shadow-xl shadow-purple-950/25 backdrop-blur-sm">
           <div className="flex items-start justify-between gap-4">
@@ -336,7 +340,7 @@ export default function LobbyPage() {
                 <h2 className="text-lg font-black">Quick Battle</h2>
               </div>
               <p className="mt-0.5 text-xs text-purple-100/65">
-                Player first · bot after {BOT_FALLBACK_SECONDS}s
+                Match by PvP rating and level, or start instantly against AI
               </p>
             </div>
             <span className="rounded-lg border border-white/10 bg-black/15 px-2.5 py-1 text-xs font-bold text-purple-100/70">
@@ -369,7 +373,7 @@ export default function LobbyPage() {
           </div>
 
           {inQueue ? (
-            <div className="mt-4 rounded-2xl border border-purple-200/15 bg-black/20 p-4">
+            <div aria-live="polite" className="mt-4 rounded-2xl border border-purple-200/15 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="relative h-9 w-9 rounded-full border border-pink-300/30 bg-pink-300/10">
@@ -378,39 +382,72 @@ export default function LobbyPage() {
                   </div>
                   <div>
                     <p className="text-sm font-bold">
-                      {queueTime >= BOT_FALLBACK_SECONDS - 1 ? 'Starting bot battle...' : 'Finding a fair opponent'}
+                      Finding a fair opponent
                     </p>
-                    <p className="text-xs text-purple-100/55">Searching near your rating and level</p>
+                    <p className="text-xs text-purple-100/55">
+                      {queueTime < 10 ? 'Searching near your rating and level' : 'Expanding the search range'}
+                    </p>
                   </div>
                 </div>
                 <span className="font-mono text-sm text-pink-100">{formatTime(queueTime)}</span>
               </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-purple-400 to-pink-400 transition-all duration-500"
-                  style={{ width: `${queueProgress}%` }}
-                />
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                {botAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => startBotBattle(true)}
+                    disabled={startingBot}
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-300 px-3 py-2.5 text-sm font-black text-slate-950 transition hover:bg-amber-200 disabled:opacity-60"
+                  >
+                    <BotIcon className="h-4 w-4" />
+                    {startingBot ? 'Starting...' : 'Play bot now'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={leaveQueue}
+                  disabled={startingBot}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300/25 bg-red-500/10 px-3 py-2.5 text-sm font-semibold text-red-100 hover:bg-red-500/20 disabled:opacity-50"
+                >
+                  <CloseIcon className="h-4 w-4" />
+                  Cancel search
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={leaveQueue}
-                className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300/25 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/20"
-              >
-                <CloseIcon className="h-4 w-4" />
-                Cancel search
-              </button>
+              {!botAvailable && (
+                <p className="mt-3 text-xs text-purple-100/45">AI option available in {BOT_OFFER_SECONDS - queueTime}s</p>
+              )}
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={joinQueue}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-purple-950/30 transition hover:from-purple-400 hover:to-pink-400 hover:-translate-y-0.5 active:translate-y-0"
-            >
-              <BoltIcon className="h-5 w-5" />
-              Find Opponent
-            </button>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1.4fr_1fr]">
+              <button
+                type="button"
+                onClick={joinQueue}
+                disabled={startingBot}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-purple-950/30 transition hover:from-purple-400 hover:to-pink-400 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60"
+              >
+                <BoltIcon className="h-5 w-5" />
+                Find player
+              </button>
+              <button
+                type="button"
+                onClick={() => startBotBattle(false)}
+                disabled={startingBot}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-300/20 disabled:opacity-60"
+              >
+                <BotIcon className="h-5 w-5" />
+                {startingBot ? 'Starting...' : 'Play bot'}
+              </button>
+            </div>
           )}
         </section>
+
+        <NewsletterConsentPrompt />
+
+        <DailyObjectivesPanel
+          onBalanceChange={balance => setProfile(current => current
+            ? { ...current, points_balance: balance }
+            : current)}
+        />
 
         <section className="rounded-2xl border border-white/15 bg-white/10 p-4 shadow-xl shadow-purple-950/20 backdrop-blur-sm">
           <div className="flex items-start justify-between gap-4">
@@ -533,8 +570,12 @@ export default function LobbyPage() {
                 type="text"
                 value={joinCode}
                 onChange={event => setJoinCode(event.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6))}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && joinCode.length === 6 && !joining) void joinByCode()
+                }}
                 placeholder="X4K9PZ"
                 maxLength={6}
+                aria-label="6-character room code"
                 className="h-12 w-full rounded-2xl border border-white/15 bg-black/20 px-4 text-center font-mono text-2xl font-black tracking-[0.22em] text-white placeholder:text-white/15 focus:border-purple-300/70 focus:outline-none"
               />
               <div className="flex gap-2">
@@ -679,6 +720,18 @@ function CloseIcon({ className }: IconProps) {
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  )
+}
+
+function BotIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="7" width="16" height="12" rx="3" />
+      <path d="M12 3v4" />
+      <circle cx="9" cy="13" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="13" r="1" fill="currentColor" stroke="none" />
+      <path d="M9 16h6" />
     </svg>
   )
 }
