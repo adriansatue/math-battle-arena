@@ -7,7 +7,7 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user || user.is_anonymous) return NextResponse.json({ error: 'Registered account required' }, { status: 401 })
 
   const admin = createAdminClient()
   const { data, error } = await admin.rpc('get_weekly_competition_summary', {
@@ -20,7 +20,10 @@ export async function GET() {
   const { data: identities, error: identitiesError } = await admin.rpc('get_registered_player_emblems', {
     p_user_ids: userIds,
   })
-  if (identitiesError) return NextResponse.json({ error: 'Could not load weekly competition' }, { status: 500 })
+  if (identitiesError) {
+    console.error('[weekly-competition] emblem lookup failed:', identitiesError.message)
+    return NextResponse.json(summary)
+  }
 
   const identityMap = new Map((Array.isArray(identities) ? identities : []).map(identity => [identity.id, identity.emblem]))
   return NextResponse.json({
@@ -34,7 +37,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user || user.is_anonymous) return NextResponse.json({ error: 'Registered account required' }, { status: 401 })
 
   const body = await request.json().catch(() => ({})) as { week_start?: unknown }
   if (typeof body.week_start !== 'string' || !DATE_PATTERN.test(body.week_start)) {

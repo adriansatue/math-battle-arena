@@ -76,8 +76,8 @@ export default function TermsPage() {
 
         <Section title="10. Contact">
           Questions about these Terms should be directed to{' '}
-          <a href="mailto:support@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
-            support@mathbattlearena.com
+          <a href="mailto:support@mathbattle.es" className="text-purple-400 hover:text-purple-300 transition">
+            support@mathbattle.es
           </a>.
         </Section>
 

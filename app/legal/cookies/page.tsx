@@ -61,8 +61,8 @@ export default function CookiesPolicyPage() {
 
         <Section title="Contact">
           If you have questions about our use of cookies, please contact us at{' '}
-          <a href="mailto:support@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
-            support@mathbattlearena.com
+          <a href="mailto:support@mathbattle.es" className="text-purple-400 hover:text-purple-300 transition">
+            support@mathbattle.es
           </a>.
         </Section>
 

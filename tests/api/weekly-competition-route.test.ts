@@ -43,6 +43,37 @@ describe('/api/weekly-competition', () => {
     })
   })
 
+  it('requires a registered account', async () => {
+    vi.mocked(createClient).mockResolvedValue(createSupabaseMock({
+      user: { id: 'guest-1', is_anonymous: true },
+    }) as never)
+
+    const response = await GET()
+
+    expect(response.status).toBe(401)
+    expect(createAdminClient).not.toHaveBeenCalled()
+  })
+
+  it('returns the weekly ranking without emblems when enrichment is unavailable', async () => {
+    const summary = {
+      week_start: '2026-08-24',
+      division: 1,
+      leaderboard: [{ user_id: 'user-1', username: 'Ada' }],
+    }
+    const admin = createSupabaseMock({ rpcResults: [
+      { data: summary, error: null },
+      { data: null, error: { message: 'function unavailable' } },
+    ] })
+    vi.mocked(createClient).mockResolvedValue(createSupabaseMock({ user: { id: 'user-1' } }) as never)
+    vi.mocked(createAdminClient).mockReturnValue(admin as never)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const response = await GET()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual(summary)
+  })
+
   it('rejects an invalid reward week before calling the database', async () => {
     const admin = createSupabaseMock()
     vi.mocked(createClient).mockResolvedValue(createSupabaseMock({ user: { id: 'user-1' } }) as never)

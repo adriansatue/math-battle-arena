@@ -42,7 +42,7 @@ export async function sendReengagementEmail(candidate: ReengagementCandidate, ca
   return resend.emails.send({
     from,
     to: candidate.email,
-    replyTo: process.env.RESEND_REPLY_TO ?? 'support@mathbattlearena.com',
+    replyTo: process.env.RESEND_REPLY_TO ?? 'support@mathbattle.es',
     subject: content.subject,
     html: content.html,
     text: content.text,

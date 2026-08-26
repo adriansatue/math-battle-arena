@@ -24,8 +24,8 @@ export default function DataProtectionPage() {
           Math Battle Arena (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is responsible for deciding how personal information
           collected through the Service is used. In data protection law, this means we act as the data
           controller. You can contact us at{' '}
-          <a href="mailto:privacy@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
-            privacy@mathbattlearena.com
+          <a href="mailto:privacy@mathbattle.es" className="text-purple-400 hover:text-purple-300 transition">
+            privacy@mathbattle.es
           </a>.
         </Section>
 
@@ -107,8 +107,8 @@ export default function DataProtectionPage() {
           </ul>
           <p className="mt-3">
           To exercise a right, contact us at{' '}
-          <a href="mailto:privacy@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
-            privacy@mathbattlearena.com
+          <a href="mailto:privacy@mathbattle.es" className="text-purple-400 hover:text-purple-300 transition">
+            privacy@mathbattle.es
           </a>. We may need to verify your identity. We normally respond within one month, although the law
           allows more time in some circumstances. These rights are not absolute and legal exemptions may apply.
           </p>
@@ -137,8 +137,8 @@ export default function DataProtectionPage() {
           <p>
             For a concern about how we use your personal information or handle a data protection right,
             please email{' '}
-            <a href="mailto:privacy@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
-              privacy@mathbattlearena.com
+            <a href="mailto:privacy@mathbattle.es" className="text-purple-400 hover:text-purple-300 transition">
+              privacy@mathbattle.es
             </a>{' '}
             first so we have an opportunity to investigate and put things right.
           </p>
@@ -158,8 +158,8 @@ export default function DataProtectionPage() {
           </p>
           <p>
             For a general question or complaint about the Service, contact{' '}
-            <a href="mailto:support@mathbattlearena.com" className="text-purple-400 hover:text-purple-300 transition">
-              support@mathbattlearena.com
+            <a href="mailto:support@mathbattle.es" className="text-purple-400 hover:text-purple-300 transition">
+              support@mathbattle.es
             </a>.
           </p>
         </Section>
