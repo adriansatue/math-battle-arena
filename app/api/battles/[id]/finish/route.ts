@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { DEFAULT_RATING, calculateBattleRewards, getRewardMode } from '@/lib/game/scoring'
 import { recordServerEvent } from '@/lib/events/server'
+import { getBotLevelConfig, isBotCampaignLevel } from '@/lib/game/bot'
 
 export async function POST(
   request: Request,
@@ -237,6 +238,7 @@ export async function POST(
   }))
 
   let practiceSummary = null
+  let campaignResult = null
   if (rewardMode === 'practice') {
     const { data, error: practiceError } = await adminSupabase.rpc('complete_focused_practice', {
       p_battle_id: id,
@@ -262,6 +264,20 @@ export async function POST(
     }))
   }
 
+  if (rewardMode === 'bot' && isBotCampaignLevel(battle.bot_level)) {
+    const config = getBotLevelConfig(battle.bot_level)
+    const { data, error: campaignError } = await adminSupabase.rpc('settle_bot_campaign_victory', {
+      p_user_id: user.id,
+      p_battle_id: id,
+      p_bonus_coins: config.firstWinCoins,
+    })
+    if (campaignError) {
+      console.error(`[finish] bot campaign error for ${id}:`, campaignError.message)
+    } else {
+      campaignResult = data
+    }
+  }
+
   await Promise.all(playerIds.map(async playerId => {
     const isFocusedPractice = rewardMode === 'practice'
       && practiceSummary !== null
@@ -284,5 +300,6 @@ export async function POST(
     host_score:  hostScore,
     guest_score: guestScore,
     practice_summary: practiceSummary,
+    campaign_result: campaignResult,
   })
 }

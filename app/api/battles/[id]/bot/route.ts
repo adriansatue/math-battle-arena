@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getBotAnswer, getBotDelay } from '@/lib/game/bot'
+import { getBotAnswer, getBotDelay, getCampaignBotAnswer, getCampaignBotDelay, isBotCampaignLevel } from '@/lib/game/bot'
 import type { BotDifficulty } from '@/lib/game/bot'
 import { calculatePoints } from '@/lib/game/scoring'
 import type { Difficulty } from '@/lib/game/questions'
@@ -67,13 +67,13 @@ export async function POST(
     return NextResponse.json({ message: 'Already answered' })
   }
 
-  const diff      = (battle.difficulty ?? 'medium') as BotDifficulty
-  const { answer, isCorrect } = getBotAnswer(
-    Number(question.correct_answer),
-    diff
-  )
+  const diff = (battle.difficulty ?? 'medium') as BotDifficulty
+  const campaignLevel = isBotCampaignLevel(battle.bot_level) ? battle.bot_level : null
+  const { answer, isCorrect } = campaignLevel
+    ? getCampaignBotAnswer(Number(question.correct_answer), campaignLevel)
+    : getBotAnswer(Number(question.correct_answer), diff)
 
-  const timeTakenMs = getBotDelay(diff)
+  const timeTakenMs = campaignLevel ? getCampaignBotDelay(campaignLevel) : getBotDelay(diff)
 
   // Calculate bot points
   const pointsEarned = calculatePoints({
