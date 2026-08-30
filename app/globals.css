@@ -31,3 +31,65 @@ body {
   80%  { opacity: 1; }
   100% { transform: translateX(120px) skewX(-12deg); opacity: 0; }
 }
+
+@keyframes bot-campaign-new {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(252 211 77 / 0); }
+  35% { box-shadow: 0 0 0 5px rgb(252 211 77 / 0.16), 0 0 24px rgb(244 114 182 / 0.2); }
+}
+
+@keyframes campaign-bot-won {
+  0% { opacity: 0; transform: translateY(18px) scale(0.72) rotate(-8deg); }
+  55% { opacity: 1; transform: translateY(-7px) scale(1.08) rotate(3deg); }
+  76% { transform: translateY(2px) scale(0.98) rotate(-1deg); }
+  100% { transform: translateY(0) scale(1) rotate(0); }
+}
+
+@keyframes campaign-bot-lost {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(-5px) rotate(-2deg); }
+  40% { transform: translateX(5px) rotate(2deg); }
+  60% { transform: translateX(-3px) rotate(-1deg); }
+  80% { transform: translateX(3px) rotate(1deg); }
+}
+
+.bot-campaign-new {
+  animation: bot-campaign-new 1.8s ease-out 3;
+}
+
+.campaign-bot-won {
+  animation: campaign-bot-won 760ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.campaign-bot-won::before,
+.campaign-bot-won::after {
+  position: absolute;
+  z-index: 1;
+  color: #fde68a;
+  font-size: 1.4rem;
+  content: "✦";
+  animation: campaign-bot-won 900ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.campaign-bot-won::before {
+  left: -0.5rem;
+  top: 0.25rem;
+}
+
+.campaign-bot-won::after {
+  bottom: 0.75rem;
+  right: -0.5rem;
+}
+
+.campaign-bot-lost {
+  animation: campaign-bot-lost 480ms ease-in-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bot-campaign-new,
+  .campaign-bot-won,
+  .campaign-bot-won::before,
+  .campaign-bot-won::after,
+  .campaign-bot-lost {
+    animation: none;
+  }
+}

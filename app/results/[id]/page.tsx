@@ -8,6 +8,7 @@ import { recordClientEvent } from '@/lib/events/client'
 import { getLevelProgress } from '@/lib/game/progression'
 import { getResultRecommendation } from '@/lib/game/results'
 import { BOT_LEVELS, getBotLevelConfig, isBotCampaignLevel } from '@/lib/game/bot'
+import { BotPortrait } from '@/components/bots/BotPortrait'
 
 interface ReviewItem {
   sequence: number
@@ -202,6 +203,13 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
   const scoreDifference = Math.abs(userScore - opponentScore)
   const correctAnswers = review.filter(item => item.isCorrect).length
   const accuracy = review.length > 0 ? Math.round((correctAnswers / review.length) * 100) : 0
+  const missedAnswers = review.length - correctAnswers
+  const campaignPracticeHref = campaignBot
+    ? `/practice?topic=${campaignBot.category}&difficulty=${campaignBot.difficulty}&source=results`
+    : '/practice'
+  const campaignImprovement = accuracy < 70
+    ? `Aim for at least 7 correct answers. Review your ${missedAnswers} missed ${missedAnswers === 1 ? 'answer' : 'answers'}, then practise ${campaignBot ? TOPIC_LABELS[campaignBot.category].toLowerCase() : 'this topic'}.`
+    : `Your ${accuracy}% accuracy is strong. Answer a little faster to close the ${scoreDifference.toLocaleString()}-point gap and earn more battle points.`
 
   function trackPracticeRecommendation() {
     if (!recommendation?.topic) return
@@ -332,40 +340,63 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
         </section>
 
         {campaignBot && campaignResult && (
-          <section className="relative mt-3 overflow-hidden rounded-2xl border border-amber-300/25 bg-amber-300/10 p-5 shadow-xl shadow-purple-950/20 backdrop-blur-sm sm:p-6">
-            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-200 to-amber-400" />
-            <div className="sm:flex sm:items-center sm:justify-between sm:gap-8">
+          <section className={`relative mt-3 overflow-hidden rounded-2xl border p-5 shadow-xl shadow-purple-950/20 backdrop-blur-sm sm:p-6 ${campaignResult.won ? 'border-amber-300/30 bg-amber-300/10' : 'border-rose-300/25 bg-rose-400/[0.08]'}`}>
+            <div className={`absolute inset-y-0 left-0 w-1 ${campaignResult.won ? 'bg-gradient-to-b from-amber-200 to-amber-400' : 'bg-gradient-to-b from-rose-300 to-purple-500'}`} />
+            <div className="grid gap-5 sm:grid-cols-[8rem_1fr_auto] sm:items-center sm:gap-6">
+              <div className={`relative mx-auto w-28 sm:w-32 ${campaignResult.won ? 'campaign-bot-won' : 'campaign-bot-lost'}`}>
+                <BotPortrait level={campaignBot.level} category={campaignBot.category} className="w-full shadow-xl shadow-purple-950/35" />
+                <span className={`absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide shadow-lg ${campaignResult.won ? 'bg-amber-300 text-purple-950' : 'bg-rose-300 text-rose-950'}`}>
+                  {campaignResult.won ? 'Defeated' : 'Try again'}
+                </span>
+              </div>
+
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase text-amber-300/75">Bot Arena · Level {campaignBot.level}</p>
-                <div className="mt-2">
-                <div>
-                  <h2 className="text-2xl font-black">
-                    {campaignResult.won ? `${campaignBot.name} defeated` : `${campaignBot.name} holds the line`}
-                  </h2>
-                  <p className="mt-1 text-sm text-white/55">
-                    {campaignResult.won
-                      ? campaignResult.first_clear
-                        ? campaignBot.level === BOT_LEVELS.length
-                          ? `Bot Arena complete. You earned ${campaignResult.bonus_coins} bonus coins.`
-                          : `Level ${campaignResult.highest_unlocked} is now unlocked. You earned ${campaignResult.bonus_coins} bonus coins.`
-                        : `Campaign progress: ${campaignResult.highest_defeated}/${BOT_LEVELS.length}. Replays still award regular battle XP.`
-                      : 'Your regular battle XP still counts. Review your answers and challenge this rival again.'}
-                  </p>
-                  <div className="mt-3 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-black/20">
-                    <div
-                      className="h-full bg-amber-300 transition-[width] duration-700"
-                      style={{ width: `${Math.round((campaignResult.highest_defeated / BOT_LEVELS.length) * 100)}%` }}
-                    />
+                <p className={`text-xs font-black uppercase tracking-wide ${campaignResult.won ? 'text-amber-300' : 'text-rose-200'}`}>Bot Arena · Level {campaignBot.level}</p>
+                <h2 className="mt-1 text-2xl font-black">
+                  {campaignResult.won ? `${campaignBot.name} conquered` : `${campaignBot.name} holds the line`}
+                </h2>
+                <p className="mt-1 text-sm text-white/60">
+                  {campaignResult.won
+                    ? campaignResult.first_clear
+                      ? campaignBot.level === BOT_LEVELS.length
+                        ? `Bot Arena complete. You earned ${campaignResult.bonus_coins} bonus coins.`
+                        : `New rival unlocked: Level ${campaignResult.highest_unlocked}. You earned ${campaignResult.bonus_coins} bonus coins.`
+                      : `Campaign progress: ${campaignResult.highest_defeated}/${BOT_LEVELS.length}. Replays still award regular battle XP.`
+                    : campaignImprovement}
+                </p>
+
+                {!campaignResult.won && (
+                  <div className="mt-3 rounded-xl border border-white/10 bg-black/15 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-wide text-rose-200">How to beat this bot</p>
+                    <p className="mt-1 text-sm font-semibold text-white">{campaignBot.lesson}</p>
+                    <p className="mt-1 text-xs text-purple-100/55">Target: {campaignBot.mission}</p>
                   </div>
-                </div>
+                )}
+
+                <div className="mt-4 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-black/20">
+                  <div
+                    className={`h-full transition-[width] duration-700 ${campaignResult.won ? 'bg-amber-300' : 'bg-rose-300'}`}
+                    style={{ width: `${Math.round((campaignResult.highest_defeated / BOT_LEVELS.length) * 100)}%` }}
+                  />
                 </div>
               </div>
-              <Link
-                href="/bot-campaign"
-                className="mt-5 block min-h-12 shrink-0 rounded-xl bg-amber-300 px-6 py-3.5 text-center text-sm font-black text-slate-950 shadow-lg shadow-purple-950/20 transition hover:-translate-y-0.5 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-100 sm:mt-0"
-              >
-                {campaignResult.won && campaignBot.level < BOT_LEVELS.length ? 'Next bot level' : 'Challenge again'}
-              </Link>
+
+              <div className="grid gap-2 sm:w-44">
+                {!campaignResult.won && (
+                  <Link
+                    href={campaignPracticeHref}
+                    className="min-h-11 rounded-xl border border-purple-200/20 bg-white/10 px-4 py-3 text-center text-sm font-bold text-white transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                  >
+                    Practise skill
+                  </Link>
+                )}
+                <Link
+                  href="/bot-campaign"
+                  className={`min-h-12 rounded-xl px-5 py-3.5 text-center text-sm font-black shadow-lg shadow-purple-950/20 transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 ${campaignResult.won ? 'bg-amber-300 text-slate-950 hover:bg-amber-200 focus:ring-amber-100' : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-400 hover:to-pink-400 focus:ring-purple-200'}`}
+                >
+                  {campaignResult.won && campaignBot.level < BOT_LEVELS.length ? 'Meet next rival' : 'Try level again'}
+                </Link>
+              </div>
             </div>
           </section>
         )}

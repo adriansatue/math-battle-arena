@@ -430,10 +430,13 @@ export default function LobbyPage() {
               </button>
               <Link
                 href="/bot-campaign"
-                className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-300/20 disabled:opacity-60"
+                className="bot-campaign-new flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:bg-amber-300/20"
               >
                 <BotIcon className="h-5 w-5" />
                 Bot campaign
+                <span className="rounded-md bg-amber-300 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-purple-950 shadow-sm shadow-amber-200/30">
+                  New
+                </span>
               </Link>
             </div>
           )}
