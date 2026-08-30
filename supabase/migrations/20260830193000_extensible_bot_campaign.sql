@@ -1,7 +1,4 @@
--- Twenty-level PvE campaign progression and idempotent first-win rewards.
-
-alter table public.battles
-  add column if not exists bot_level smallint;
+-- Remove the original 20-level ceiling so new catalog levels can be appended safely.
 
 alter table public.battles
   drop constraint if exists battles_bot_level_valid;
@@ -9,44 +6,19 @@ alter table public.battles
   add constraint battles_bot_level_valid
   check (bot_level is null or bot_level >= 1) not valid;
 
-create table if not exists public.bot_campaign_progress (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  highest_unlocked smallint not null default 1 check (highest_unlocked >= 1),
-  highest_defeated smallint not null default 0 check (highest_defeated >= 0),
-  total_wins integer not null default 0 check (total_wins >= 0),
-  updated_at timestamptz not null default now()
-);
+alter table public.bot_campaign_progress
+  drop constraint if exists bot_campaign_progress_highest_unlocked_check;
+alter table public.bot_campaign_progress
+  drop constraint if exists bot_campaign_progress_highest_defeated_check;
+alter table public.bot_campaign_progress
+  add constraint bot_campaign_progress_highest_unlocked_check check (highest_unlocked >= 1);
+alter table public.bot_campaign_progress
+  add constraint bot_campaign_progress_highest_defeated_check check (highest_defeated >= 0);
 
-create table if not exists public.bot_campaign_victories (
-  user_id uuid not null references auth.users(id) on delete cascade,
-  battle_id uuid not null references public.battles(id) on delete cascade,
-  bot_level smallint not null check (bot_level >= 1),
-  first_level_clear boolean not null,
-  bonus_coins integer not null check (bonus_coins >= 0),
-  won_at timestamptz not null default now(),
-  primary key (user_id, battle_id)
-);
-
-alter table public.bot_campaign_progress enable row level security;
-alter table public.bot_campaign_victories enable row level security;
-revoke all on table public.bot_campaign_progress from public, anon, authenticated;
-revoke all on table public.bot_campaign_victories from public, anon, authenticated;
-
-create or replace function public.get_bot_campaign_progress(p_user_id uuid)
-returns jsonb
-language sql
-stable
-security definer
-set search_path = public
-as $$
-select jsonb_build_object(
-  'highest_unlocked', coalesce(progress.highest_unlocked, 1),
-  'highest_defeated', coalesce(progress.highest_defeated, 0),
-  'total_wins', coalesce(progress.total_wins, 0)
-)
-from (select 1) seed
-left join public.bot_campaign_progress progress on progress.user_id = p_user_id;
-$$;
+alter table public.bot_campaign_victories
+  drop constraint if exists bot_campaign_victories_bot_level_check;
+alter table public.bot_campaign_victories
+  add constraint bot_campaign_victories_bot_level_check check (bot_level >= 1);
 
 create or replace function public.settle_bot_campaign_victory(
   p_user_id uuid,
@@ -130,34 +102,5 @@ begin
 end;
 $$;
 
-create or replace function public.get_bot_campaign_battle_result(
-  p_user_id uuid,
-  p_battle_id uuid
-)
-returns jsonb
-language sql
-stable
-security definer
-set search_path = public
-as $$
-select jsonb_build_object(
-  'won', victory.battle_id is not null,
-  'bot_level', battle.bot_level,
-  'first_clear', coalesce(victory.first_level_clear, false),
-  'bonus_coins', coalesce(victory.bonus_coins, 0),
-  'highest_unlocked', coalesce(progress.highest_unlocked, 1),
-  'highest_defeated', coalesce(progress.highest_defeated, 0)
-)
-from public.battles battle
-left join public.bot_campaign_victories victory
-  on victory.battle_id = battle.id and victory.user_id = p_user_id
-left join public.bot_campaign_progress progress on progress.user_id = p_user_id
-where battle.id = p_battle_id and battle.host_id = p_user_id and battle.bot_level is not null;
-$$;
-
-revoke all on function public.get_bot_campaign_progress(uuid) from public, anon, authenticated;
 revoke all on function public.settle_bot_campaign_victory(uuid, uuid, integer) from public, anon, authenticated;
-revoke all on function public.get_bot_campaign_battle_result(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.get_bot_campaign_progress(uuid) to service_role;
 grant execute on function public.settle_bot_campaign_victory(uuid, uuid, integer) to service_role;
-grant execute on function public.get_bot_campaign_battle_result(uuid, uuid) to service_role;

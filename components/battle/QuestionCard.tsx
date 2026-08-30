@@ -35,9 +35,19 @@ export function QuestionCard({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const num = parseFloat(inputRef.current?.value ?? '')
+    const rawValue = inputRef.current?.value.trim().replace(',', '.') ?? ''
+    if (!/^-?\d+(?:\.\d+)?$/.test(rawValue)) return
+    const num = Number(rawValue)
     if (isNaN(num)) return
     onAnswer(num)
+  }
+
+  function toggleSign() {
+    if (!inputRef.current) return
+    inputRef.current.value = inputRef.current.value.startsWith('-')
+      ? inputRef.current.value.slice(1)
+      : `-${inputRef.current.value}`
+    inputRef.current.focus()
   }
 
   const borderCls =
@@ -122,16 +132,27 @@ export function QuestionCard({
       {/* Answer form */}
       {!hideInput && (
       <form onSubmit={handleSubmit} className="flex gap-3">
+        <button
+          type="button"
+          onClick={toggleSign}
+          disabled={disabled}
+          aria-label="Change answer sign"
+          title="Change answer sign"
+          className="h-[58px] w-14 shrink-0 rounded-xl border-2 border-purple-300/30 bg-purple-500/15 text-xl font-black text-purple-100 transition hover:bg-purple-500/25 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+        >
+          +/−
+        </button>
         <input
           ref={inputRef}
-          type="number"
-          step="any"
+          type="text"
           inputMode="decimal"
           defaultValue=""
           disabled={disabled}
           placeholder="Your answer…"
+          autoComplete="off"
+          aria-label="Your answer"
           className="
-            flex-1 bg-white/10 border-2 border-white/20 rounded-xl
+            min-w-0 flex-1 bg-white/10 border-2 border-white/20 rounded-xl
             px-4 py-3.5 text-white text-2xl font-bold text-center
             placeholder-white/25
             focus:outline-none focus:border-purple-400 focus:bg-white/15

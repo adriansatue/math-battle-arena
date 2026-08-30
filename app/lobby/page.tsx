@@ -9,8 +9,6 @@ import { timeLimits } from '@/lib/game/questions'
 import { recordClientEvent } from '@/lib/events/client'
 import { DailyObjectivesPanel } from '@/components/lobby/DailyObjectivesPanel'
 import { NewsletterConsentPrompt } from '@/components/lobby/NewsletterConsentPrompt'
-import { BotCampaignPanel } from '@/components/lobby/BotCampaignPanel'
-import type { BotCampaignLevel } from '@/lib/game/bot'
 
 type Mode = 'realtime' | 'turnbased'
 type Difficulty = 'easy' | 'medium' | 'hard'
@@ -22,12 +20,6 @@ type PlayerSnapshot = {
   rating: number | null
   total_points: number | null
   points_balance: number | null
-}
-
-type CampaignProgress = {
-  highest_unlocked: number
-  highest_defeated: number
-  total_wins: number
 }
 
 type IconProps = {
@@ -85,9 +77,6 @@ export default function LobbyPage() {
   const [joining, setJoining] = useState(false)
   const [inQueue, setInQueue] = useState(false)
   const [startingBot, setStartingBot] = useState(false)
-  const [campaignProgress, setCampaignProgress] = useState<CampaignProgress | null>(null)
-  const [campaignLevel, setCampaignLevel] = useState<BotCampaignLevel>(1)
-  const [campaignError, setCampaignError] = useState<string | null>(null)
   const [queueTime, setQueueTime] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
@@ -121,23 +110,6 @@ export default function LobbyPage() {
       cancelled = true
     }
   }, [supabase])
-
-  useEffect(() => {
-    let cancelled = false
-    async function loadCampaign() {
-      const response = await fetch('/api/bot-campaign', { cache: 'no-store' }).catch(() => null)
-      if (!response?.ok) {
-        if (!cancelled) setCampaignError('Bot campaign progress is unavailable. Apply the latest database migration and try again.')
-        return
-      }
-      const data = await response.json() as { progress: CampaignProgress }
-      if (cancelled) return
-      setCampaignProgress(data.progress)
-      setCampaignLevel(Math.min(20, Math.max(1, data.progress.highest_unlocked)) as BotCampaignLevel)
-    }
-    void loadCampaign()
-    return () => { cancelled = true }
-  }, [])
 
   useEffect(() => {
     return () => {
@@ -265,7 +237,7 @@ export default function LobbyPage() {
     }, 1000)
   }
 
-  async function startBotBattle(checkForMatch = false, selectedCampaignLevel?: BotCampaignLevel) {
+  async function startBotBattle(checkForMatch = false) {
     if (startingBot || battleTransition.current) return
     battleTransition.current = true
     setStartingBot(true)
@@ -291,7 +263,6 @@ export default function LobbyPage() {
           mode: queueMode,
           difficulty: queueDiff,
           bot_difficulty: queueDiff,
-          bot_level: selectedCampaignLevel,
         }),
       })
       const botData = await botRes.json().catch(() => ({}))
@@ -457,27 +428,16 @@ export default function LobbyPage() {
                 <BoltIcon className="h-5 w-5" />
                 Find player
               </button>
-              <button
-                type="button"
-                onClick={() => document.getElementById('bot-campaign')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                disabled={startingBot}
+              <Link
+                href="/bot-campaign"
                 className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm font-black text-amber-100 transition hover:bg-amber-300/20 disabled:opacity-60"
               >
                 <BotIcon className="h-5 w-5" />
                 Bot campaign
-              </button>
+              </Link>
             </div>
           )}
         </section>
-
-        <BotCampaignPanel
-          progress={campaignProgress}
-          selectedLevel={campaignLevel}
-          starting={startingBot}
-          error={campaignError}
-          onSelect={setCampaignLevel}
-          onStart={level => void startBotBattle(false, level)}
-        />
 
         <NewsletterConsentPrompt />
 

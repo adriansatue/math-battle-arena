@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { generateQuestions } from '@/lib/game/questions'
+import { generateQuestions, generateTargetedQuestions } from '@/lib/game/questions'
 import { timeLimits } from '@/lib/game/questions'
 import type { Difficulty } from '@/lib/game/questions'
 import { cleanupInactiveBattles } from '@/lib/game/battle-cleanup'
@@ -180,7 +180,9 @@ export async function POST(request: Request) {
   }
 
   // Generate questions
-  const questions = generateQuestions(battleDifficulty as Difficulty, 10)
+  const questions = campaignConfig
+    ? generateTargetedQuestions(campaignConfig.category, battleDifficulty as Difficulty, 10)
+    : generateQuestions(battleDifficulty as Difficulty, 10)
   const now = new Date().toISOString()
 
   const { error: questionsError } = await adminSupabase

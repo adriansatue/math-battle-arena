@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { recordClientEvent } from '@/lib/events/client'
 import { getLevelProgress } from '@/lib/game/progression'
 import { getResultRecommendation } from '@/lib/game/results'
-import { getBotLevelConfig, isBotCampaignLevel } from '@/lib/game/bot'
+import { BOT_LEVELS, getBotLevelConfig, isBotCampaignLevel } from '@/lib/game/bot'
 
 interface ReviewItem {
   sequence: number
@@ -177,8 +177,8 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
 
   if (!battle) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#090b10] text-white">
-        <p className="animate-pulse text-sm font-semibold text-white/60">Loading results...</p>
+      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 font-sans text-white">
+        <p className="animate-pulse text-sm font-semibold text-purple-100/60">Loading results...</p>
       </main>
     )
   }
@@ -212,23 +212,23 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
   }
 
   return (
-    <main className="min-h-screen bg-[#080a0f] px-4 py-6 text-white sm:px-6 sm:py-10">
+    <main className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 px-4 py-6 font-sans text-white sm:px-6 sm:py-10">
       <div className="mx-auto w-full max-w-5xl">
-        <header className="relative overflow-hidden border border-white/10 bg-[#11141b] px-5 pb-7 pt-5 sm:px-10 sm:pb-10 sm:pt-7">
-          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-400 via-emerald-300 to-cyan-300" />
+        <header className="relative overflow-hidden rounded-2xl border border-purple-300/20 bg-white/10 px-5 pb-7 pt-5 shadow-xl shadow-purple-950/30 backdrop-blur-sm sm:px-10 sm:pb-10 sm:pt-7">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400" />
           <div className="flex items-center justify-between gap-4">
-            <p className="text-xs font-black uppercase text-amber-300/80">Battle report</p>
-            <p className="border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-bold uppercase text-white/45">
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-purple-300">Battle report</p>
+            <p className="rounded-lg border border-white/10 bg-black/15 px-3 py-1 text-[11px] font-bold uppercase text-purple-100/60">
               {campaignBot ? `Bot Arena · Level ${campaignBot.level}` : String(battle.mode ?? 'Battle')}
             </p>
           </div>
 
           <div className="mt-7 text-center sm:mt-9">
-            <p className={`text-xs font-black uppercase ${isWinner ? 'text-emerald-300' : isDraw ? 'text-cyan-300' : 'text-white/45'}`}>
+            <p className={`text-xs font-black uppercase tracking-wide ${isWinner ? 'text-pink-200' : isDraw ? 'text-purple-200' : 'text-purple-100/55'}`}>
               {waiting ? 'Calculating final score' : isWinner ? `Won by ${scoreDifference.toLocaleString()} points` : isDraw ? 'Scores level' : isPractice ? 'Session saved' : `${scoreDifference.toLocaleString()} point difference`}
             </p>
             <h1 className="mt-2 text-4xl font-black sm:text-6xl">{waiting ? 'Finalizing...' : outcome}</h1>
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/55">
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-purple-100/65">
             {isPractice
               ? 'Your focused session has been saved.'
               : isDraw
@@ -245,15 +245,15 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                 key={playerId}
                 className={`${isPractice ? 'col-start-1 row-start-1' : index === 1 ? 'col-start-3' : 'col-start-1 row-start-1'} min-w-0 text-center`}
               >
-                <p className={`truncate text-xs font-black uppercase ${playerId === userId ? 'text-amber-300' : 'text-white/45'}`}>
+                <p className={`truncate text-xs font-black uppercase ${playerId === userId ? 'text-pink-200' : 'text-purple-100/55'}`}>
                   {playerId === userId ? 'You' : profiles[playerId] ?? 'Opponent'}
                 </p>
                 <p className="mt-1 text-4xl font-black tabular-nums text-white sm:text-6xl">{score.toLocaleString()}</p>
-                <p className="mt-1 text-[11px] font-semibold uppercase text-white/30">Battle points</p>
+                <p className="mt-1 text-[11px] font-semibold uppercase text-purple-100/40">Battle points</p>
               </div>
             ))}
             {!isPractice && (
-              <div className="col-start-2 row-start-1 mx-3 flex h-11 w-11 items-center justify-center border border-white/10 bg-[#080a0f] text-xs font-black text-white/35 sm:mx-8 sm:h-14 sm:w-14">
+              <div className="col-start-2 row-start-1 mx-3 flex h-11 w-11 items-center justify-center rounded-full border border-purple-200/20 bg-purple-950/60 text-xs font-black text-purple-100/50 sm:mx-8 sm:h-14 sm:w-14">
                 VS
               </div>
             )}
@@ -261,26 +261,26 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
         </header>
 
         {review.length > 0 && (
-          <section className="grid grid-cols-3 border-x border-b border-white/10 bg-[#0d1016]" aria-label="Performance summary">
+          <section className="mt-3 grid grid-cols-3 overflow-hidden rounded-2xl border border-purple-300/20 bg-white/10 shadow-xl shadow-purple-950/20 backdrop-blur-sm" aria-label="Performance summary">
             <div className="border-r border-white/10 px-3 py-4 text-center sm:py-5">
               <p className="text-xl font-black tabular-nums text-white sm:text-2xl">{correctAnswers}/{review.length}</p>
-              <p className="mt-1 text-[10px] font-bold uppercase text-white/35 sm:text-xs">Correct</p>
+              <p className="mt-1 text-[10px] font-bold uppercase text-purple-100/45 sm:text-xs">Correct</p>
             </div>
             <div className="border-r border-white/10 px-3 py-4 text-center sm:py-5">
-              <p className={`text-xl font-black tabular-nums sm:text-2xl ${accuracy >= 80 ? 'text-emerald-300' : accuracy >= 50 ? 'text-amber-300' : 'text-rose-300'}`}>{accuracy}%</p>
-              <p className="mt-1 text-[10px] font-bold uppercase text-white/35 sm:text-xs">Accuracy</p>
+              <p className={`text-xl font-black tabular-nums sm:text-2xl ${accuracy >= 80 ? 'text-pink-200' : accuracy >= 50 ? 'text-amber-300' : 'text-rose-300'}`}>{accuracy}%</p>
+              <p className="mt-1 text-[10px] font-bold uppercase text-purple-100/45 sm:text-xs">Accuracy</p>
             </div>
             <div className="px-3 py-4 text-center sm:py-5">
               <p className="text-xl font-black tabular-nums text-white sm:text-2xl">{scoreDifference.toLocaleString()}</p>
-              <p className="mt-1 text-[10px] font-bold uppercase text-white/35 sm:text-xs">Point gap</p>
+              <p className="mt-1 text-[10px] font-bold uppercase text-purple-100/45 sm:text-xs">Point gap</p>
             </div>
           </section>
         )}
 
-        <section className="mt-5 border border-white/10 bg-[#11141b] p-5 sm:p-6">
+        <section className="mt-3 rounded-2xl border border-purple-300/20 bg-white/10 p-5 shadow-xl shadow-purple-950/20 backdrop-blur-sm sm:p-6">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="text-xs font-bold uppercase text-emerald-300/70">Rewards earned</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-purple-300">Rewards earned</p>
               <h2 className="mt-1 text-xl font-black sm:text-2xl">Your progress</h2>
             </div>
             {reward && reward.level_after !== reward.level_before && (
@@ -293,16 +293,16 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
           {reward ? (
             <>
               <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3">
-                <div className="border border-emerald-300/15 bg-emerald-300/[0.06] p-3 text-center sm:p-4">
-                  <p className="text-xl font-black tabular-nums text-emerald-300 sm:text-2xl">+{reward.xp_earned}</p>
+                <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 p-3 text-center sm:p-4">
+                  <p className="text-xl font-black tabular-nums text-purple-200 sm:text-2xl">+{reward.xp_earned}</p>
                   <p className="mt-1 text-[10px] font-bold uppercase text-white/40 sm:text-xs">XP</p>
                 </div>
-                <div className="border border-amber-300/15 bg-amber-300/[0.06] p-3 text-center sm:p-4">
+                <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-center sm:p-4">
                   <p className="text-xl font-black tabular-nums text-amber-300 sm:text-2xl">+{reward.coins_earned}</p>
                   <p className="mt-1 text-[10px] font-bold uppercase text-white/40 sm:text-xs">Coins</p>
                 </div>
-                <div className="border border-cyan-300/15 bg-cyan-300/[0.06] p-3 text-center sm:p-4">
-                  <p className={`text-xl font-black tabular-nums sm:text-2xl ${reward.rating_delta >= 0 ? 'text-cyan-300' : 'text-rose-300'}`}>
+                <div className="rounded-xl border border-pink-300/20 bg-pink-300/10 p-3 text-center sm:p-4">
+                  <p className={`text-xl font-black tabular-nums sm:text-2xl ${reward.rating_delta >= 0 ? 'text-pink-200' : 'text-rose-300'}`}>
                     {signedNumber(reward.rating_delta)}
                   </p>
                   <p className="mt-1 text-[10px] font-bold uppercase text-white/40 sm:text-xs">PvP Rating</p>
@@ -315,7 +315,7 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                   <span>{progressAfter.isMaxLevel ? 'Maximum level' : `${progressAfter.xpToNextLevel.toLocaleString()} XP to next level`}</span>
                 </div>
                 <div className="mt-2 h-2 overflow-hidden bg-white/10" role="progressbar" aria-valuenow={progressAfter.progressPercent} aria-valuemin={0} aria-valuemax={100} aria-label={`Level ${progressAfter.level} progress`}>
-                  <div className="h-full bg-gradient-to-r from-emerald-400 to-cyan-300 transition-[width] duration-700" style={{ width: `${progressAfter.progressPercent}%` }} />
+                  <div className="h-full bg-gradient-to-r from-purple-400 to-pink-400 transition-[width] duration-700" style={{ width: `${progressAfter.progressPercent}%` }} />
                 </div>
                 <p className="mt-2 text-xs text-white/35">
                   {progressBefore.level === progressAfter.level
@@ -325,15 +325,15 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
               </div>
             </>
           ) : (
-            <p className="mt-4 border border-amber-300/20 bg-amber-300/5 p-3 text-sm text-amber-100/70">
+            <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100/80">
               Reward details are still being prepared. Your saved score is not affected.
             </p>
           )}
         </section>
 
         {campaignBot && campaignResult && (
-          <section className="relative mt-5 overflow-hidden border border-amber-300/25 bg-[#18150f] p-5 sm:p-6">
-            <div className="absolute inset-y-0 left-0 w-1 bg-amber-300" />
+          <section className="relative mt-3 overflow-hidden rounded-2xl border border-amber-300/25 bg-amber-300/10 p-5 shadow-xl shadow-purple-950/20 backdrop-blur-sm sm:p-6">
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-200 to-amber-400" />
             <div className="sm:flex sm:items-center sm:justify-between sm:gap-8">
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase text-amber-300/75">Bot Arena · Level {campaignBot.level}</p>
@@ -345,34 +345,34 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                   <p className="mt-1 text-sm text-white/55">
                     {campaignResult.won
                       ? campaignResult.first_clear
-                        ? campaignBot.level === 20
+                        ? campaignBot.level === BOT_LEVELS.length
                           ? `Bot Arena complete. You earned ${campaignResult.bonus_coins} bonus coins.`
                           : `Level ${campaignResult.highest_unlocked} is now unlocked. You earned ${campaignResult.bonus_coins} bonus coins.`
-                        : `Campaign progress: ${campaignResult.highest_defeated}/20. Replays still award regular battle XP.`
+                        : `Campaign progress: ${campaignResult.highest_defeated}/${BOT_LEVELS.length}. Replays still award regular battle XP.`
                       : 'Your regular battle XP still counts. Review your answers and challenge this rival again.'}
                   </p>
-                  <div className="mt-3 h-1.5 w-full max-w-sm overflow-hidden bg-white/10">
+                  <div className="mt-3 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-black/20">
                     <div
                       className="h-full bg-amber-300 transition-[width] duration-700"
-                      style={{ width: `${Math.round((campaignResult.highest_defeated / 20) * 100)}%` }}
+                      style={{ width: `${Math.round((campaignResult.highest_defeated / BOT_LEVELS.length) * 100)}%` }}
                     />
                   </div>
                 </div>
                 </div>
               </div>
               <Link
-                href="/lobby#bot-campaign"
-                className="mt-5 block min-h-12 shrink-0 bg-amber-300 px-6 py-3.5 text-center text-sm font-black text-black transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-100 sm:mt-0"
+                href="/bot-campaign"
+                className="mt-5 block min-h-12 shrink-0 rounded-xl bg-amber-300 px-6 py-3.5 text-center text-sm font-black text-slate-950 shadow-lg shadow-purple-950/20 transition hover:-translate-y-0.5 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-100 sm:mt-0"
               >
-                {campaignResult.won && campaignBot.level < 20 ? 'Next bot level' : 'Challenge again'}
+                {campaignResult.won && campaignBot.level < BOT_LEVELS.length ? 'Next bot level' : 'Challenge again'}
               </Link>
             </div>
           </section>
         )}
 
         {recommendation && topicLabel && (
-          <section className="mt-5 border border-white/10 bg-[#11141b] p-5 sm:p-6">
-            <p className="text-xs font-black uppercase text-cyan-300/65">Recommended next</p>
+          <section className="mt-3 rounded-2xl border border-purple-300/20 bg-white/10 p-5 shadow-xl shadow-purple-950/20 backdrop-blur-sm sm:p-6">
+            <p className="text-xs font-black uppercase tracking-wide text-purple-300">Recommended next</p>
             <div className="mt-2 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
               <div>
                 <h2 className="text-xl font-black sm:text-2xl">
@@ -388,14 +388,14 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                 <Link
                   href={`/practice?topic=${recommendation.topic}&difficulty=easy&source=results`}
                   onClick={trackPracticeRecommendation}
-                  className="min-h-12 shrink-0 bg-amber-300 px-6 py-3.5 text-center text-sm font-black text-black transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                  className="min-h-12 shrink-0 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3.5 text-center text-sm font-black text-white shadow-lg shadow-purple-950/30 transition hover:-translate-y-0.5 hover:from-purple-400 hover:to-pink-400 focus:outline-none focus:ring-2 focus:ring-purple-200"
                 >
                   Practise {topicLabel}
                 </Link>
               ) : (
                 <Link
                   href="/lobby"
-                  className="min-h-12 shrink-0 bg-emerald-400 px-6 py-3.5 text-center text-sm font-black text-black transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  className="min-h-12 shrink-0 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3.5 text-center text-sm font-black text-white shadow-lg shadow-purple-950/30 transition hover:-translate-y-0.5 hover:from-purple-400 hover:to-pink-400 focus:outline-none focus:ring-2 focus:ring-purple-200"
                 >
                   Find another match
                 </Link>
@@ -405,18 +405,18 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
         )}
 
         {review.length > 0 && (
-          <section className="mt-5 border border-white/10 bg-[#11141b] p-5 sm:p-6">
+          <section className="mt-3 rounded-2xl border border-purple-300/20 bg-white/10 p-5 shadow-xl shadow-purple-950/20 backdrop-blur-sm sm:p-6">
             <button
               onClick={toggleReview}
               className="flex w-full items-center justify-between gap-4 text-left focus:outline-none focus:ring-2 focus:ring-white/30"
               aria-expanded={showReview}
             >
               <span>
-                <span className="block text-xs font-black uppercase text-white/35">Question breakdown</span>
+                <span className="block text-xs font-black uppercase tracking-wide text-purple-300">Question breakdown</span>
                 <strong className="mt-1 block text-xl">Answer review</strong>
                 <span className="mt-1 block text-sm text-white/45">{correctAnswers}/{review.length} correct · {accuracy}% accuracy</span>
               </span>
-              <span className="border border-white/10 bg-white/5 px-3 py-2 text-xs font-black uppercase text-white/65">
+              <span className="rounded-lg border border-purple-200/20 bg-purple-400/10 px-3 py-2 text-xs font-black uppercase text-purple-100/80">
                 {showReview ? 'Close' : 'Review'}
               </span>
             </button>
@@ -424,8 +424,8 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
             {showReview && (
               <ol className="mt-5 space-y-2 border-t border-white/10 pt-5">
                 {review.map(item => (
-                  <li key={item.sequence} className={`grid grid-cols-[2.25rem_1fr] gap-3 border p-3 sm:p-4 ${item.isCorrect ? 'border-emerald-300/15 bg-emerald-300/[0.04]' : 'border-rose-300/15 bg-rose-300/[0.04]'}`}>
-                    <span className={`flex h-8 w-8 items-center justify-center text-xs font-black ${item.isCorrect ? 'bg-emerald-400 text-black' : 'bg-rose-400 text-black'}`}>
+                  <li key={item.sequence} className={`grid grid-cols-[2.25rem_1fr] gap-3 rounded-xl border p-3 sm:p-4 ${item.isCorrect ? 'border-emerald-300/20 bg-emerald-300/10' : 'border-rose-300/20 bg-rose-300/10'}`}>
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-black ${item.isCorrect ? 'bg-emerald-300 text-slate-950' : 'bg-rose-300 text-slate-950'}`}>
                       {item.sequence}
                     </span>
                     <div>
@@ -448,11 +448,11 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
           </section>
         )}
 
-        <nav className="mt-5 grid grid-cols-2 gap-2 pb-4 sm:grid-cols-[1fr_auto_auto_auto]" aria-label="Battle report actions">
-          <Link href="/lobby" className="col-span-2 min-h-12 bg-white px-5 py-3.5 text-center text-sm font-black text-black transition hover:bg-white/85 sm:col-span-1">Play again</Link>
-          <Link href="/rewards" className="border border-white/10 bg-white/5 px-5 py-3.5 text-center text-sm font-bold text-white/65 hover:bg-white/10 hover:text-white">Cards</Link>
-          <Link href={`/profile/${userId}`} className="border border-white/10 bg-white/5 px-5 py-3.5 text-center text-sm font-bold text-white/65 hover:bg-white/10 hover:text-white">Profile</Link>
-          <Link href="/leaderboard" className="col-span-2 border border-white/10 bg-white/5 px-5 py-3.5 text-center text-sm font-bold text-white/65 hover:bg-white/10 hover:text-white sm:col-span-1">Rankings</Link>
+        <nav className="mt-3 grid grid-cols-2 gap-2 pb-4 sm:grid-cols-[1fr_auto_auto_auto]" aria-label="Battle report actions">
+          <Link href="/lobby" className="col-span-2 min-h-12 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-3.5 text-center text-sm font-black text-white shadow-lg shadow-purple-950/30 transition hover:from-purple-400 hover:to-pink-400 sm:col-span-1">Play again</Link>
+          <Link href="/rewards" className="rounded-xl border border-white/10 bg-white/10 px-5 py-3.5 text-center text-sm font-bold text-purple-100/75 transition hover:bg-white/20 hover:text-white">Cards</Link>
+          <Link href={`/profile/${userId}`} className="rounded-xl border border-white/10 bg-white/10 px-5 py-3.5 text-center text-sm font-bold text-purple-100/75 transition hover:bg-white/20 hover:text-white">Profile</Link>
+          <Link href="/leaderboard" className="col-span-2 rounded-xl border border-white/10 bg-white/10 px-5 py-3.5 text-center text-sm font-bold text-purple-100/75 transition hover:bg-white/20 hover:text-white sm:col-span-1">Rankings</Link>
         </nav>
       </div>
     </main>
