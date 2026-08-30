@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { SwordLogo } from '@/components/SwordLogo'
 import { BotCampaignPanel } from '@/components/lobby/BotCampaignPanel'
+import { BotPortrait } from '@/components/bots/BotPortrait'
 import { BOT_LEVELS } from '@/lib/game/bot'
 import type { BotCampaignLevel } from '@/lib/game/bot'
 
@@ -21,6 +22,7 @@ export default function BotCampaignPage() {
   const [loading, setLoading] = useState(true)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const currentRival = BOT_LEVELS[Math.max(0, Math.min(BOT_LEVELS.length - 1, (progress?.highest_unlocked ?? 1) - 1))]
 
   useEffect(() => {
     let cancelled = false
@@ -99,16 +101,37 @@ export default function BotCampaignPage() {
             <p className="animate-pulse text-sm font-semibold text-purple-100/65">Loading your rivals...</p>
           </section>
         ) : (
-          <div className="mt-3">
-            <BotCampaignPanel
-              progress={progress}
-              selectedLevel={selectedLevel}
-              starting={starting}
-              error={error}
-              onSelect={setSelectedLevel}
-              onStart={level => void startBattle(level)}
-            />
-          </div>
+          <>
+            {progress && currentRival && (
+              <section className="mt-3 grid grid-cols-[4.5rem_1fr] items-center gap-3 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-3 shadow-xl shadow-purple-950/20 sm:grid-cols-[6rem_1fr_auto] sm:gap-5 sm:p-4">
+                <BotPortrait level={currentRival.level} category={currentRival.category} className="w-full shadow-lg shadow-purple-950/30" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-300">Continue campaign</p>
+                  <h2 className="mt-1 truncate text-lg font-black sm:text-2xl">Level {currentRival.level}: {currentRival.name}</h2>
+                  <p className="mt-1 line-clamp-2 text-xs text-purple-100/65 sm:text-sm">{currentRival.mission}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void startBattle(currentRival.level)}
+                  disabled={starting}
+                  className="col-span-2 min-h-12 rounded-xl bg-amber-300 px-6 py-3 text-sm font-black text-slate-950 shadow-lg shadow-purple-950/25 transition hover:-translate-y-0.5 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-1"
+                >
+                  {starting ? 'Preparing rival...' : `Play level ${currentRival.level} now`}
+                </button>
+              </section>
+            )}
+
+            <div className="mt-3">
+              <BotCampaignPanel
+                progress={progress}
+                selectedLevel={selectedLevel}
+                starting={starting}
+                error={error}
+                onSelect={setSelectedLevel}
+                onStart={level => void startBattle(level)}
+              />
+            </div>
+          </>
         )}
 
         <Link
