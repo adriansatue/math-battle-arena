@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code  = searchParams.get('code')
   const next  = searchParams.get('next') ?? '/lobby'
+  const requestedUpgrade = searchParams.get('upgrade')
 
   if (code) {
     const supabase = await createClient()
@@ -15,6 +16,9 @@ export async function GET(request: Request) {
       // For OAuth users, check if they have a username set yet
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+        const authMethod = requestedUpgrade === 'email' || user.app_metadata.provider === 'email'
+          ? 'email'
+          : 'google'
         const admin = createAdminClient()
         const { data: anonymousStart } = await admin
           .from('product_events')
@@ -30,14 +34,14 @@ export async function GET(request: Request) {
             userId: user.id,
             eventName: 'guest_upgraded',
             dedupKey: `account:${user.id}:upgraded`,
-            properties: { auth_method: 'google' },
+            properties: { auth_method: authMethod },
           })
         } else {
           await recordServerEvent({
             userId: user.id,
             eventName: 'account_started',
             dedupKey: `account:${user.id}`,
-            properties: { account_type: 'registered', auth_method: 'oauth' },
+            properties: { account_type: 'registered', auth_method: authMethod },
           })
         }
 

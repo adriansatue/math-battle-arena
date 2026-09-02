@@ -75,7 +75,7 @@ export async function POST(
   const [existingResult, prevAnswersResult] = await Promise.all([
     adminSupabase
       .from('battle_answers')
-      .select('id')
+      .select('answer_given, is_correct, points_earned')
       .eq('question_id', question_id)
       .eq('player_id', user.id)
       .single(),
@@ -89,11 +89,31 @@ export async function POST(
   ])
 
   const { data: existing } = existingResult
+  const { data: prevAnswers } = prevAnswersResult
   if (existing) {
-    return NextResponse.json({ error: 'Already answered' }, { status: 400 })
+    const isSameSubmission = isTimeout
+      ? Number(existing.answer_given) === 0
+      : Number(existing.answer_given) === Number(answer_given)
+
+    if (!isSameSubmission) {
+      return NextResponse.json({ error: 'This question already has a different answer.' }, { status: 409 })
+    }
+
+    let recoveredStreak = 0
+    for (const previousAnswer of (prevAnswers || [])) {
+      if (previousAnswer.is_correct) recoveredStreak++
+      else break
+    }
+
+    return NextResponse.json({
+      is_correct:      existing.is_correct,
+      points_earned:   existing.points_earned,
+      correct_answer:  existing.is_correct ? null : question.correct_answer,
+      current_streak:  existing.is_correct ? recoveredStreak : 0,
+      recovered:       true,
+    })
   }
 
-  const { data: prevAnswers } = prevAnswersResult
   if (question.sequence > 1 && !prevAnswers?.[0]?.answered_at) {
     return NextResponse.json({ error: 'Previous question is not answered yet' }, { status: 409 })
   }

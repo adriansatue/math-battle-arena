@@ -9,6 +9,7 @@ import { QuestionCard } from '@/components/battle/QuestionCard'
 import { ScoreBar }     from '@/components/battle/ScoreBar'
 import { CardStakeSelector, InventoryItem } from '@/components/battle/CardStakeSelector'
 import { GameNotice } from '@/components/battle/GameNotice'
+import { getResultHoldMs, submitAnswerWithRetry, type AnswerRequestState } from '@/lib/game/answer-submission'
 
 type StakedCardInfo = { name: string; rarity: 'common' | 'uncommon' | 'rare' | 'legendary'; image_url: string }
 
@@ -31,9 +32,6 @@ interface LastResult {
   correct: boolean
   points:  number
 }
-
-const RESULT_DISPLAY_MS = 1200
-const MIN_RESULT_HOLD_MS = 450
 
 type BattleNotice = {
   kind: 'info' | 'warning' | 'error'
@@ -65,6 +63,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [players,     setPlayers]     = useState<Player[]>([])
   const [answered,    setAnswered]    = useState(false)
   const [pendingAnswer, setPendingAnswer] = useState<number | null>(null)
+  const [answerRequestState, setAnswerRequestState] = useState<AnswerRequestState>('idle')
   const [lastResult,  setLastResult]  = useState<LastResult | null>(null)
   const [correctAnswer, setCorrectAnswer] = useState<number | null>(null)
   const [status,      setStatus]      = useState<'waiting' | 'active' | 'finished'>('waiting')
@@ -79,6 +78,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
 
   // Synchronous guard against timer/click race (same fix as practice page)
   const answeredRef = useRef(false)
+  const answerTimeRef = useRef<number | null>(null)
 
   // Ref so the stable subscription callback always reads the latest userId
   const userIdRef = useRef('')
@@ -427,40 +427,44 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   }
 
   // Submit answer
-  async function handleAnswer(answer: number) {
-    if (answeredRef.current || answered || paused || !questions[currentQ]) return
-    answeredRef.current = true
-    setAnswered(true)
-    setPendingAnswer(answer)   // ← show immediately, before server responds
+  async function handleAnswer(answer: number, isRetry = false) {
+    if (paused || !questions[currentQ]) return
+    if (isRetry) {
+      if (!answeredRef.current || pendingAnswer !== answer) return
+    } else {
+      if (answeredRef.current || answered) return
+      answeredRef.current = true
+      setAnswered(true)
+      setPendingAnswer(answer)
+      answerTimeRef.current = serverSentAt
+        ? Date.now() - new Date(serverSentAt).getTime()
+        : 0
+    }
 
-    const sentAt = Date.now()
-
-    const res = await fetch(`/api/battles/${battleId}/answer`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
+    let res: Response
+    try {
+      res = await submitAnswerWithRetry(`/api/battles/${battleId}/answer`, {
         question_id:   questions[currentQ].id,
         answer_given:  answer,
-        time_taken_ms: serverSentAt
-          ? Date.now() - new Date(serverSentAt).getTime()
-          : Date.now() - sentAt,
-      }),
-    }).catch(() => null)
+        time_taken_ms: answerTimeRef.current ?? 0,
+      }, setAnswerRequestState)
+    } catch {
+      setAnswerRequestState('failed')
+      setGameNotice({ kind: 'error', message: 'Your answer was not marked wrong. Check your connection and retry.' })
+      return
+    }
 
-    const data = res ? await readResponseJson(res) : {}
-    if (!res) {
-      setGameNotice({
-        kind:    'error',
-        message: 'Connection issue while saving your answer. We will move on with 0 points.',
-      })
-    } else if (!res.ok) {
+    const data = await readResponseJson(res)
+    if (!res.ok) {
+      setAnswerRequestState('failed')
       setGameNotice({
         kind:    res.status === 409 ? 'warning' : 'error',
-        message: String(data.error ?? 'Your answer could not be saved. Moving on with 0 points.'),
+        message: String(data.error ?? 'Your answer could not be saved. Please retry.'),
       })
-    } else {
-      setGameNotice(null)
+      return
     }
+    setAnswerRequestState('idle')
+    setGameNotice(null)
 
     // Even on API error, always advance so the game never gets stuck
     const hasServerResult = typeof data.is_correct === 'boolean'
@@ -469,7 +473,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     const currentStreak = typeof data.current_streak === 'number' ? data.current_streak : 0
     const answerValue = typeof data.correct_answer === 'number' ? data.correct_answer : null
 
-    if (data.is_correct !== undefined || !res || !res.ok) {
+    if (data.is_correct !== undefined) {
       if (hasServerResult) {
       // Update own score locally
       setPlayers(prev => prev.map(p =>
@@ -515,7 +519,6 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       }
       }
 
-      const resultDelayMs = Math.max(MIN_RESULT_HOLD_MS, RESULT_DISPLAY_MS - (Date.now() - sentAt))
       setTimeout(() => {
         if (currentQ + 1 < questions.length) {
           const freshTimestamp = new Date().toISOString()
@@ -524,6 +527,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           answeredRef.current = false
           setLastResult(null)
           setPendingAnswer(null)
+          setAnswerRequestState('idle')
           setCorrectAnswer(null)
           setServerSentAt(freshTimestamp)
         } else {
@@ -531,7 +535,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           broadcast('player:finished', { player_id: userId })
           setStatus('finished')
         }
-      }, resultDelayMs)
+      }, getResultHoldMs(isCorrect))
     }
   }
 
@@ -761,6 +765,8 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
               lastResult={lastResult}
               pendingAnswer={pendingAnswer}
               correctAnswer={correctAnswer}
+              requestState={answerRequestState}
+              onRetry={pendingAnswer == null ? undefined : () => handleAnswer(pendingAnswer, true)}
             />
 
       </div>

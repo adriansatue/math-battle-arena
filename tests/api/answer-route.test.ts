@@ -60,6 +60,67 @@ describe('POST /api/battles/[id]/answer', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'Already answered' })
   })
 
+  it('replays the stored result when the same answer is retried', async () => {
+    vi.mocked(createClient).mockResolvedValue(createSupabaseMock({
+      user: { id: 'host-1' },
+    }) as never)
+    vi.mocked(createAdminClient).mockReturnValue(createSupabaseMock({
+      fromResults: [
+        {
+          data: {
+            id:             'question-1',
+            battle_id:      'battle-1',
+            correct_answer: 2,
+            sequence:       1,
+            server_sent_at: new Date().toISOString(),
+          },
+          error: null,
+        },
+        {
+          data: {
+            id:               'battle-1',
+            host_id:          'host-1',
+            guest_id:         'guest-1',
+            status:           'active',
+            mode:             'turnbased',
+            difficulty:       'easy',
+            time_per_q_secs:  10,
+          },
+          error: null,
+        },
+        {
+          data: {
+            answer_given:  2,
+            is_correct:    true,
+            points_earned: 125,
+          },
+          error: null,
+        },
+        {
+          data: [
+            { is_correct: true, answered_at: new Date().toISOString() },
+            { is_correct: true, answered_at: new Date().toISOString() },
+          ],
+          error: null,
+        },
+      ],
+    }) as never)
+
+    const res = await POST(jsonRequest({
+      question_id:   'question-1',
+      answer_given:  2,
+      time_taken_ms: 1000,
+    }), { params: Promise.resolve({ id: 'battle-1' }) })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      is_correct:    true,
+      points_earned: 125,
+      current_streak: 2,
+      recovered:     true,
+    })
+  })
+
   it('rejects answering a later question before the previous one is saved', async () => {
     vi.mocked(createClient).mockResolvedValue(createSupabaseMock({
       user: { id: 'host-1' },

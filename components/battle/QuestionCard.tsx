@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import type { AnswerRequestState } from '@/lib/game/answer-submission'
 
 interface QuestionCardProps {
   sequence:       number
@@ -14,11 +15,14 @@ interface QuestionCardProps {
   showProgress?:  boolean         // default true
   hideInput?:     boolean         // hide the typed input (e.g. MC mode)
   hideQuestion?:  boolean         // hide the question text (shown externally)
+  requestState?:  AnswerRequestState
+  onRetry?:       () => void
 }
 
 export function QuestionCard({
   sequence, total, questionText, onAnswer, disabled,
   lastResult, pendingAnswer, correctAnswer, showProgress = true, hideInput = false, hideQuestion = false,
+  requestState = 'idle', onRetry,
 }: QuestionCardProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const flash: 'correct' | 'wrong' | null = lastResult
@@ -103,7 +107,7 @@ export function QuestionCard({
       )}
 
       {/* Feedback row */}
-      <div className="min-h-[36px] flex items-center justify-center mb-4">
+      <div className="min-h-[36px] flex items-center justify-center mb-4" role="status" aria-live="polite">
         {lastResult ? (
           <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold ${
             lastResult.correct
@@ -114,18 +118,33 @@ export function QuestionCard({
               <>✅ Correct! <span className="text-green-200 ml-1">+{lastResult.points} pts</span></>
             ) : (
               <>
-                ❌ Wrong
+                Wrong
+                {pendingAnswer != null && (
+                  <> · Your answer: <span className="text-red-100 font-black">{pendingAnswer}</span></>
+                )}
                 {correctAnswer != null && (
-                  <> — answer: <span className="text-white font-black ml-1">{correctAnswer}</span></>
+                  <> · Correct: <span className="text-white font-black">{correctAnswer}</span></>
                 )}
               </>
             )}
           </div>
-        ) : pendingAnswer != null ? (
+        ) : pendingAnswer != null && requestState === 'failed' ? (
+          <div className="flex items-center gap-3 text-sm font-bold text-red-200">
+            <span>We could not save your answer.</span>
+            {onRetry && (
+              <button type="button" onClick={onRetry} className="rounded-lg border border-red-300/40 px-3 py-1.5 hover:bg-red-500/15">
+                Retry
+              </button>
+            )}
+          </div>
+        ) : pendingAnswer != null && ['checking', 'slow', 'retrying'].includes(requestState) ? (
           <div className="flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-bold bg-yellow-500/10 text-yellow-300">
             <span className="inline-block w-3.5 h-3.5 border-2 border-yellow-300 border-t-transparent rounded-full animate-spin"/>
-            Checking {pendingAnswer}…
+            {requestState === 'slow' ? 'Connection is taking longer than usual...' :
+             requestState === 'retrying' ? 'Reconnecting...' : `Checking ${pendingAnswer}...`}
           </div>
+        ) : pendingAnswer != null ? (
+          <span className="text-sm font-bold text-white/55">Answer locked in</span>
         ) : null}
       </div>
 
